@@ -45,6 +45,9 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[dev]"
       - run: rustc --version && cargo --version && cc --version
+      - run: cargo fmt --manifest-path backends/rust/Cargo.toml -- --check
+      - run: cargo clippy --manifest-path backends/rust/Cargo.toml -- -D warnings
+      - run: cc -std=c11 -Wall -Wextra -Werror -fanalyzer -fsyntax-only backends/c/main.c
       - run: python -m pytest tests/test_backends.py
       - run: python -m metaforge.cli backend-check --backend both --strategy heapsort --size 1000 --repeats 3
 
