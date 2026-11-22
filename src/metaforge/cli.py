@@ -29,6 +29,19 @@ def _persist(result: dict[str, Any], output: Path) -> None:
     print(f"Report: {output.with_suffix('.md')}")
 
 
+def _persist_code(result: dict[str, Any], output: Path) -> None:
+    from metaforge.reporting.code_markdown import render_code_report
+
+    save_run(result, output)
+    archive_path = archive_run(result, output.parent / "runs")
+    report = render_code_report(result)
+    output.with_suffix(".md").write_text(report, encoding="utf-8")
+    archive_path.with_suffix(".md").write_text(report, encoding="utf-8")
+    print(f"JSON: {output}")
+    print(f"Archive: {archive_path}")
+    print(f"Report: {output.with_suffix('.md')}")
+
+
 def _dataset(seed: int, size: int) -> list[int]:
     rng = random.Random(seed)
     return [rng.randint(-10_000, 10_000) for _ in range(size)]
@@ -59,6 +72,21 @@ def main() -> int:
     run.add_argument("--llm-model", default=os.environ.get("METAFORGE_AGENT_MODEL"))
     run.add_argument("--llm-timeout", type=float, default=25.0)
     run.add_argument("--output", type=Path, default=Path(".artifacts/latest.json"))
+
+    code_evolve = sub.add_parser("code-evolve", help="generate, review, and sandbox-evaluate Python algorithm source")
+    code_evolve.add_argument("--size", type=int, default=5000)
+    code_evolve.add_argument("--seed", type=int, default=7)
+    code_evolve.add_argument("--population-size", type=int, default=2)
+    code_evolve.add_argument("--generations", type=int, default=2)
+    code_evolve.add_argument("--repeats", type=int, default=3)
+    code_evolve.add_argument("--max-agent-calls", type=int, default=8)
+    code_evolve.add_argument("--global-timeout", type=float, default=180.0)
+    code_evolve.add_argument("--agent-timeout", type=float, default=30.0)
+    code_evolve.add_argument("--llm-model", default=os.environ.get("METAFORGE_AGENT_MODEL"))
+    code_evolve.add_argument("--sandbox-runtime", choices=["podman", "docker"], default=os.environ.get("METAFORGE_SANDBOX_RUNTIME", "podman"))
+    code_evolve.add_argument("--sandbox-image", default=os.environ.get("METAFORGE_SANDBOX_IMAGE"))
+    code_evolve.add_argument("--sandbox-timeout", type=float, default=10.0)
+    code_evolve.add_argument("--output", type=Path, default=Path(".artifacts/code-evolution.json"))
 
     backend_check = sub.add_parser("backend-check", help="compare correctness across Python and compiled backends")
     backend_check.add_argument("--backend", choices=["rust", "c", "both"], default="both")
@@ -117,6 +145,52 @@ def main() -> int:
         if result["best_candidate"]:
             print("Best:", result["best_candidate"]["candidate"])
         return 0
+
+    if args.command == "code-evolve":
+        if not os.environ.get("OPENAI_API_KEY"):
+            parser.error("code-evolve requires OPENAI_API_KEY in the local environment")
+        if not args.llm_model:
+            parser.error("set --llm-model or METAFORGE_AGENT_MODEL")
+        if not args.sandbox_image:
+            parser.error("set --sandbox-image or METAFORGE_SANDBOX_IMAGE to a local sha256-pinned image")
+        if not 1 <= args.size <= 100_000:
+            parser.error("--size must be 1..100000")
+        try:
+            from metaforge.agents.code_designer import OpenAICodeDesigner
+            from metaforge.evolution.code_engine import CodeEvolutionEngine
+            from metaforge.sandbox.policy import SandboxPolicy
+            from metaforge.sandbox.runner import SandboxRunner
+            designer = OpenAICodeDesigner(args.llm_model, args.agent_timeout)
+            sandbox = SandboxRunner(SandboxPolicy(
+                image=args.sandbox_image,
+                runtime=args.sandbox_runtime,
+                timeout_seconds=args.sandbox_timeout,
+            ))
+            engine = CodeEvolutionEngine(
+                designer,
+                sandbox,
+                seed=args.seed,
+                population_size=args.population_size,
+                generations=args.generations,
+                repeats=args.repeats,
+                max_agent_calls=args.max_agent_calls,
+                global_timeout_seconds=args.global_timeout,
+            )
+            dataset = _dataset(args.seed, args.size)
+            result = engine.run(dataset)
+        except (ImportError, ValueError, RuntimeError) as exc:
+            parser.error(f"code-evolve stopped safely: {type(exc).__name__}: {exc}")
+        result["replay"] = {
+            "dataset": dataset,
+            "dataset_storage": "embedded_synthetic_cli_dataset",
+        }
+        _persist_code(result, args.output)
+        if result["best_candidate"]:
+            best = result["best_candidate"]
+            print("Best fingerprint:", best["candidate"]["fingerprint"])
+            print("Median algorithm seconds:", best["median_algorithm_seconds"])
+            return 0
+        return 1
 
     if args.command in {"sandbox-check", "sandbox-smoke"}:
         if not args.image:
