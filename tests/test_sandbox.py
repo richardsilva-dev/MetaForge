@@ -132,3 +132,9 @@ def test_sandbox_policy_rejects_boolean_resource_limits():
         SandboxPolicy(image=IMAGE, cpu_limit=True)
     with pytest.raises(ValueError):
         SandboxPolicy(image=IMAGE, timeout_seconds=True)
+
+def test_sandbox_policy_rejects_non_string_image_and_runtime():
+    with pytest.raises(ValueError):
+        SandboxPolicy(image=None)
+    with pytest.raises(ValueError):
+        SandboxPolicy(image=IMAGE, runtime=[])
