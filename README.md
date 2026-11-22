@@ -132,7 +132,8 @@ Before enabling agent-generated code execution, implement and independently test
 - **V0.4 (released):** optional OpenAI Agents SDK candidate proposals through strict structured outputs, no tools, one-turn/time limits, allow-list validation, and deterministic fallback.
 - **V0.5 (released):** versioned backend interfaces, trusted Rust/C implementations, compiler/source/binary provenance, and cross-backend correctness CI.
 
-- **V0.6 (in progress):** live rootless-container validation, sandbox integration tests, fuzzing, and sanitizers before any generated-code execution.
+- **V0.6 (released):** fail-closed rootless container runner, immutable image pinning, resource/network/filesystem limits, and live Podman smoke validation in CI.
+- **V0.7 (in progress):** code-generation agents, static review, sandboxed execution/evaluation, and lineage-aware mutation.
 - **V1.0:** extensible multi-problem research laboratory.
 
 Benchmark values are exploratory. Do not claim general performance improvements without controlled, repeated comparisons across representative datasets and hardware.
