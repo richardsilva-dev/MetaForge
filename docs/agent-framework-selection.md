@@ -18,7 +18,7 @@ The current built-in specialists are deterministic reference agents used to test
 
 1. Agent output is untrusted data.
 2. Candidate descriptors must pass schema and allow-list validation.
-3. Safety review is advisory; the deterministic policy gate is authoritative.
+3. The Candidate Safety Reviewer is a mandatory pre-execution gate; deterministic descriptor validation remains authoritative.
 4. Tests and independent correctness oracles determine validity.
 5. Benchmark ranking is computed from measurements, not agent opinion.
 6. No generated source is executed until a hardened sandbox is available.
