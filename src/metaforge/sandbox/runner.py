@@ -138,6 +138,7 @@ class SandboxRunner:
                                      "Workspace path contains an unsupported mount delimiter")
             source_path = workspace / "candidate.py"
             source_path.write_bytes(source_bytes)
+            workspace.chmod(0o755)
             cid_directory = tempfile.TemporaryDirectory(prefix="metaforge-cid-")
             cid_file = Path(cid_directory.name) / "container.id"
             payload = json.dumps({"values": values}, separators=(",", ":")).encode("utf-8")
