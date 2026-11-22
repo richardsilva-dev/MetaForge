@@ -85,6 +85,9 @@ def test_rootless_sandbox_runs_with_required_isolation_flags(tmp_path):
     ):
         assert required in args
     assert "OPENAI_API_KEY" not in args
+    assert "--mount=type=bind,source=" in args
+    assert ",target=/workspace,readonly" in args
+    assert "/workspace/runner.py" in args
 
 
 def test_sandbox_fails_closed_when_runtime_is_not_rootless(tmp_path):
@@ -138,3 +141,12 @@ def test_sandbox_policy_rejects_non_string_image_and_runtime():
         SandboxPolicy(image=None)
     with pytest.raises(ValueError):
         SandboxPolicy(image=IMAGE, runtime=[])
+
+def test_trusted_sandbox_smoke_uses_probe_mode(tmp_path):
+    runtime = _fake_runtime(tmp_path)
+    runner = SandboxRunner(SandboxPolicy(image=IMAGE), str(runtime))
+    result = runner.smoke()
+    assert result.success is True
+    args = Path(str(runtime) + ".args").read_text(encoding="utf-8")
+    assert args.rstrip().endswith("1")
+    assert len(result.algorithm_samples_seconds) == 2
