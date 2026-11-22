@@ -45,7 +45,7 @@ def main() -> int:
     run.add_argument("--generations", type=int, default=3)
     run.add_argument("--seed", type=int, default=7)
     run.add_argument("--repeats", type=int, default=3)
-    run.add_argument("--population-size", type=int, default=8)
+    run.add_argument("--population-size", type=int, default=15)
     run.add_argument("--max-evaluations", type=int, default=64)
     run.add_argument("--max-workers", type=int, default=2)
     run.add_argument("--global-timeout", type=float, default=120.0)
