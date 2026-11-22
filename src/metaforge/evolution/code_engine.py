@@ -345,6 +345,9 @@ class CodeEvolutionEngine:
                 "runtime_version": preparation.runtime_version,
                 "image": preparation.image,
                 "rootless": preparation.rootless,
+                "smoke_passed": smoke.success,
+                "smoke_wall_seconds": smoke.wall_seconds,
+                "smoke_algorithm_samples_seconds": list(smoke.algorithm_samples_seconds),
             },
             "measurement_note": (
                 "Algorithm samples are measured inside the trusted container wrapper with perf_counter_ns. "
