@@ -137,89 +137,18 @@ def main() -> int:
             })
             return 0
         smoke_source = """
-import json, os, resource, socket, sys
-
-def fail(code):
-    raise SystemExit(code)
-
-if os.geteuid() == 0:
-    fail(10)
-
-mounts = {}
-with open("/proc/self/mountinfo", encoding="utf-8") as handle:
-    for line in handle:
-        fields = line.split()
-        if len(fields) > 5:
-            mounts[fields[4]] = set(fields[5].split(","))
-if "ro" not in mounts.get("/", set()):
-    fail(11)
-if "ro" not in mounts.get("/workspace", set()):
-    fail(12)
-if "noexec" not in mounts.get("/tmp", set()):
-    fail(13)
-
-status = {}
-with open("/proc/self/status", encoding="utf-8") as handle:
-    for line in handle:
-        if ":" in line:
-            key, value = line.split(":", 1)
-            status[key] = value.strip()
-if status.get("NoNewPrivs") != "1":
-    fail(14)
-if int(status.get("CapEff", "1"), 16) != 0:
-    fail(15)
-
-soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
-if soft > 64 or hard > 64:
-    fail(16)
-soft, hard = resource.getrlimit(resource.RLIMIT_FSIZE)
-if soft > 1_000_000 or hard > 1_000_000:
-    fail(17)
-soft, hard = resource.getrlimit(resource.RLIMIT_CORE)
-if soft != 0 or hard != 0:
-    fail(18)
-
-for path, limit in (
-    ("/sys/fs/cgroup/memory.max", 256 * 1024 * 1024),
-    ("/sys/fs/cgroup/pids.max", 64),
-):
-    with open(path, encoding="utf-8") as handle:
-        value = handle.read().strip()
-    if value == "max" or int(value) > limit:
-        fail(19)
-
-with open("/sys/fs/cgroup/cpu.max", encoding="utf-8") as handle:
-    quota, period = handle.read().split()
-if quota == "max" or int(quota) <= 0 or int(period) <= 0 or int(quota) / int(period) > 1.01:
-    fail(20)
-with open("/sys/fs/cgroup/memory.swap.max", encoding="utf-8") as handle:
-    if handle.read().strip() != "0":
-        fail(23)
-if os.statvfs("/dev/shm").f_frsize * os.statvfs("/dev/shm").f_blocks > 16 * 1024 * 1024:
-    fail(24)
-if os.statvfs("/tmp").f_frsize * os.statvfs("/tmp").f_blocks > 16 * 1024 * 1024:
-    fail(25)
-
-if "OPENAI_API_KEY" in os.environ:
-    fail(21)
-try:
-    socket.create_connection(("1.1.1.1", 53), timeout=0.5)
-except OSError:
-    pass
-else:
-    fail(22)
-
-payload = json.load(open(sys.argv[1], encoding="utf-8"))
-print(json.dumps(sorted(payload["values"])))
+def solve(values):
+    return sorted(values)
 """
         result = SandboxRunner(SandboxPolicy(image=args.image, runtime=args.runtime)).run_python(
-            smoke_source, [7, 2, 9, 1]
+            smoke_source, [7, 2, 9, 1], repeats=2, smoke_probe=True
         )
         print({
             "runtime": preparation.runtime,
             "image": preparation.image,
             "sandbox_smoke_passed": result.success,
             "measurement_scope": result.measurement_scope,
+            "algorithm_samples_seconds": result.algorithm_samples_seconds,
             "error": result.error,
         })
         return 0 if result.success else 1
