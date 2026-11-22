@@ -27,7 +27,7 @@ class EvolutionEngine:
     def __init__(self,runner:CandidateRunner|None=None,seed:int=7,repeats:int=3,
                  population_size:int=8,max_evaluations:int=64,max_workers:int=2,
                  global_timeout_seconds:float=120.0):
-        if repeats<1 or population_size<2: raise ValueError("Invalid evolution parameters")
+        if not 1<=repeats<=20 or not 2<=population_size<=32: raise ValueError("repeats must be 1..20 and population_size 2..32")
         if not 1<=max_evaluations<=1000: raise ValueError("max_evaluations must be 1..1000")
         if not 1<=max_workers<=8: raise ValueError("max_workers must be 1..8")
         if global_timeout_seconds<=0: raise ValueError("global_timeout_seconds must be positive")
