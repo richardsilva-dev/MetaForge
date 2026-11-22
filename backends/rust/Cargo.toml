@@ -1,0 +1,9 @@
+[package]
+name = "metaforge-rust-backend"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "metaforge-rust-backend"
+path = "src/main.rs"
