@@ -33,3 +33,19 @@ MetaForge still executes only package-owned allow-listed implementations. The wo
 ### Security limitations
 
 All candidate strategies remain package-owned allow-listed Python functions. The worker process is not a hardened sandbox and does not execute model-generated code.
+
+## 0.4.0 — 2026-11-22
+
+- Added an optional OpenAI Agents SDK Candidate Designer adapter.
+- Added strict Pydantic structured output for bounded candidate proposals.
+- Disabled agent tools and handoffs; the model is limited to one turn and a per-call timeout.
+- Disabled sensitive trace payloads for MetaForge LLM proposal runs.
+- Required proposals to match the exact registered candidate search space.
+- Added deterministic fallback when model output is invalid, incomplete, unavailable, or fails.
+- Added CLI opt-in through --llm-proposals and explicit model/API-key environment configuration.
+- Added offline ScriptedModel integration tests; no live API key is needed for CI.
+- Kept LLM proposals restricted to candidate descriptors. No model-generated source is compiled or executed.
+
+### Live-provider validation
+
+The provider integration is covered with the Agents SDK's scripted model. A real provider request still requires the user's own API key and model access; credentials are never stored in the repository or experiment artifacts.
