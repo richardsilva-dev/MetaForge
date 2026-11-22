@@ -21,7 +21,8 @@ def main()->int:
     if not 1<=args.generations<=20: parser.error("--generations must be 1..20")
     rng=random.Random(args.seed)
     dataset=[rng.randint(-10_000,10_000) for _ in range(args.size)]
-    result=EvolutionEngine(seed=args.seed,max_evaluations=args.max_evaluations,\n        max_workers=args.max_workers,global_timeout_seconds=args.global_timeout).run(dataset,args.generations)
+    result=EvolutionEngine(seed=args.seed,max_evaluations=args.max_evaluations,
+        max_workers=args.max_workers,global_timeout_seconds=args.global_timeout).run(dataset,args.generations)
     result["seed"]=args.seed
     save_run(result,args.output)
     report_path=args.output.with_suffix(".md")
