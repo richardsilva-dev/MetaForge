@@ -149,7 +149,7 @@ class SandboxRunner:
                 f"--memory-swap={self.policy.memory_mb}m", f"--cpus={self.policy.cpu_limit}",
                 f"--pids-limit={self.policy.pids_limit}", "--cap-drop=ALL",
                 "--security-opt=no-new-privileges", "--user=65534:65534",
-                "--ulimit=nofile=64:64",
+                "--ulimit=nofile=64:64", "--ulimit=core=0:0", "--shm-size=16m",
                 f"--ulimit=fsize={self.policy.max_output_bytes}:{self.policy.max_output_bytes}",
                 f"--tmpfs=/tmp:rw,noexec,nosuid,nodev,size={self.policy.tmpfs_mb}m,mode=1777",
                 f"--mount={mount}", "--workdir=/workspace", "--entrypoint=python",
