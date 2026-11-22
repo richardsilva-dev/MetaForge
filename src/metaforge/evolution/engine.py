@@ -43,13 +43,99 @@ class Evaluation:
         }
 
 
+def _dominates(left: Evaluation, right: Evaluation) -> bool:
+    if not left.valid or not right.valid:
+        return False
+    left_values = (left.median_seconds, left.median_peak_bytes)
+    right_values = (right.median_seconds, right.median_peak_bytes)
+    if any(value is None for value in (*left_values, *right_values)):
+        return False
+    no_worse = all(a <= b for a, b in zip(left_values, right_values))
+    strictly_better = any(a < b for a, b in zip(left_values, right_values))
+    return no_worse and strictly_better
+
+
+def _pareto_ranked(evaluations: list[Evaluation]) -> list[Evaluation]:
+    """Non-dominated sorting with crowding distance for deterministic tie-breaking."""
+    remaining = list(evaluations)
+    ranked: list[Evaluation] = []
+    while remaining:
+        front = [
+            item for item in remaining
+            if not any(other is not item and _dominates(other, item) for other in remaining)
+        ]
+        if not front:
+            front = [min(remaining, key=lambda item: (item.score, item.candidate.fingerprint))]
+        distances = {item.candidate.fingerprint: 0.0 for item in front}
+        for attribute in ("median_seconds", "median_peak_bytes"):
+            ordered = sorted(front, key=lambda item: getattr(item, attribute))
+            if len(ordered) <= 2:
+                for item in ordered:
+                    distances[item.candidate.fingerprint] = float("inf")
+                continue
+            distances[ordered[0].candidate.fingerprint] = float("inf")
+            distances[ordered[-1].candidate.fingerprint] = float("inf")
+            low = getattr(ordered[0], attribute)
+            high = getattr(ordered[-1], attribute)
+            span = high - low
+            if span:
+                for index in range(1, len(ordered) - 1):
+                    item = ordered[index]
+                    if distances[item.candidate.fingerprint] != float("inf"):
+                        before = getattr(ordered[index - 1], attribute)
+                        after = getattr(ordered[index + 1], attribute)
+                        distances[item.candidate.fingerprint] += (after - before) / span
+        front.sort(key=lambda item: (
+            -distances[item.candidate.fingerprint],
+            item.score,
+            item.median_peak_bytes,
+            item.candidate.fingerprint,
+        ))
+        ranked.extend(front)
+        front_ids = {item.candidate.fingerprint for item in front}
+        remaining = [item for item in remaining if item.candidate.fingerprint not in front_ids]
+    return ranked
+
+
+def _select_parents(evaluations: list[Evaluation], limit: int = 4) -> list[Evaluation]:
+    ranked = _pareto_ranked(evaluations)
+    selected: list[Evaluation] = []
+    represented_strategies: set[str] = set()
+    # Preserve algorithm-family diversity before filling by Pareto rank/crowding.
+    for item in ranked:
+        if item.candidate.strategy not in represented_strategies:
+            selected.append(item)
+            represented_strategies.add(item.candidate.strategy)
+            if len(selected) >= limit:
+                return selected
+    for item in ranked:
+        if item not in selected:
+            selected.append(item)
+            if len(selected) >= limit:
+                break
+    return selected
+
+
+def _pareto_front(evaluations: list[Evaluation]) -> list[Evaluation]:
+    unique: dict[str, Evaluation] = {}
+    for item in evaluations:
+        if item.valid:
+            current = unique.get(item.candidate.fingerprint)
+            if current is None or item.score < current.score:
+                unique[item.candidate.fingerprint] = item
+    return [
+        item for item in unique.values()
+        if not any(other is not item and _dominates(other, item) for other in unique.values())
+    ]
+
+
 class EvolutionEngine:
     def __init__(
         self,
         runner: CandidateRunner | None = None,
         seed: int = 7,
         repeats: int = 3,
-        population_size: int = 8,
+        population_size: int = 15,
         max_evaluations: int = 64,
         max_workers: int = 2,
         global_timeout_seconds: float = 120.0,
@@ -118,6 +204,7 @@ class EvolutionEngine:
                 "generation_created": 0,
                 "operator": "initial_population",
                 "parent_fingerprint": None,
+                "parent_fingerprints": [],
                 "origin": "candidate_designer",
             }
             for candidate in population
@@ -177,14 +264,17 @@ class EvolutionEngine:
                 if stop_reason == "global_timeout":
                     break
 
-            valid = sorted((item for item in evaluations if item.valid), key=lambda item: item.score)
+            valid = [item for item in evaluations if item.valid]
             records = [item.to_dict() for item in evaluations]
             analysis = self.agents.analyze(records, f"generation-{generation}-analysis")
+            front = _pareto_front(valid)
             history.append({
                 "generation": generation,
                 "evaluations": records,
                 "valid_count": len(valid),
                 "population_diversity": len(unique),
+                "strategy_diversity": len({item.candidate.strategy for item in evaluations}),
+                "pareto_front_fingerprints": [item.candidate.fingerprint for item in front],
                 "agent_analysis": analysis,
             })
 
@@ -194,38 +284,65 @@ class EvolutionEngine:
                 stop_reason = "evaluation_budget_exhausted"
                 break
             if generation < generations - 1:
-                parents = valid[: max(1, min(3, len(valid)))]
+                parents = _select_parents(valid, limit=min(4, max(1, len(valid))))
                 next_population: list[Candidate] = []
                 next_lineage: dict[str, dict[str, Any]] = {}
-                if not parents:
-                    next_population = self.generator.initial_population(self.population_size)
-                    for candidate in next_population:
-                        next_lineage.setdefault(candidate.fingerprint, {
-                            "generation_created": generation + 1,
-                            "operator": "restart_after_no_valid_candidates",
-                            "parent_fingerprint": None,
-                            "origin": "candidate_generator",
-                        })
-                else:
-                    for item in parents:
-                        candidate = item.candidate
-                        next_population.append(candidate)
-                        next_lineage.setdefault(candidate.fingerprint, {
-                            "generation_created": generation + 1,
-                            "operator": "elite_carryover",
-                            "parent_fingerprint": candidate.fingerprint,
-                            "origin": "selection",
-                        })
-                    while len(next_population) < self.population_size:
-                        parent = self.random.choice(parents).candidate
-                        child = self.generator.mutate(parent)
-                        next_population.append(child)
-                        next_lineage.setdefault(child.fingerprint, {
-                            "generation_created": generation + 1,
-                            "operator": "mutation",
-                            "parent_fingerprint": parent.fingerprint,
-                            "origin": "candidate_generator",
-                        })
+                seen: set[str] = set()
+                elite_count = min(2, len(parents))
+                for item in parents[:elite_count]:
+                    candidate = item.candidate
+                    if candidate.fingerprint in seen:
+                        continue
+                    next_population.append(candidate)
+                    seen.add(candidate.fingerprint)
+                    next_lineage[candidate.fingerprint] = {
+                        "generation_created": generation + 1,
+                        "operator": "elite_carryover",
+                        "parent_fingerprint": candidate.fingerprint,
+                        "parent_fingerprints": [candidate.fingerprint],
+                        "origin": "selection",
+                    }
+
+                attempts = 0
+                while len(next_population) < self.population_size and attempts < self.population_size * 12:
+                    attempts += 1
+                    if not parents:
+                        child = self.generator.mutate(self.random.choice(population))
+                        operator = "restart_mutation"
+                        parent_fingerprints = []
+                    elif len(parents) > 1 and self.random.random() < 0.65:
+                        first, second = self.random.sample(parents, 2)
+                        child = self.generator.crossover(first.candidate, second.candidate)
+                        operator = "crossover"
+                        parent_fingerprints = [first.candidate.fingerprint, second.candidate.fingerprint]
+                    else:
+                        parent = self.random.choice(parents)
+                        child = self.generator.mutate(parent.candidate)
+                        operator = "mutation"
+                        parent_fingerprints = [parent.candidate.fingerprint]
+                    if child.fingerprint in seen:
+                        continue
+                    next_population.append(child)
+                    seen.add(child.fingerprint)
+                    next_lineage[child.fingerprint] = {
+                        "generation_created": generation + 1,
+                        "operator": operator,
+                        "parent_fingerprint": parent_fingerprints[0] if parent_fingerprints else None,
+                        "parent_fingerprints": parent_fingerprints,
+                        "origin": "candidate_generator",
+                    }
+
+                while len(next_population) < self.population_size:
+                    parent = self.random.choice(parents).candidate if parents else self.random.choice(population)
+                    child = self.generator.mutate(parent)
+                    next_population.append(child)
+                    next_lineage.setdefault(child.fingerprint, {
+                        "generation_created": generation + 1,
+                        "operator": "mutation_duplicate_fallback",
+                        "parent_fingerprint": parent.fingerprint,
+                        "parent_fingerprints": [parent.fingerprint],
+                        "origin": "candidate_generator",
+                    })
                 population = next_population
                 lineage_by_fingerprint = next_lineage
 
@@ -236,9 +353,20 @@ class EvolutionEngine:
             if record["valid"]
         ]
         best = min(all_valid, key=lambda record: record["median_seconds"]) if all_valid else None
+        all_evaluations = [
+            Evaluation(
+                Candidate.from_dict(record["candidate"]),
+                True,
+                record["median_seconds"],
+                record["median_peak_bytes"],
+                lineage=record.get("lineage"),
+            )
+            for record in all_valid
+        ]
+        pareto_records = [item.to_dict() for item in _pareto_front(all_evaluations)]
         finished_at = datetime.now(timezone.utc).isoformat()
         return {
-            "schema_version": "1.1",
+            "schema_version": "1.2",
             "run_id": run_id,
             "started_at": started_at,
             "finished_at": finished_at,
@@ -254,9 +382,12 @@ class EvolutionEngine:
                 "max_evaluations": self.max_evaluations,
                 "max_workers": self.max_workers,
                 "global_timeout_seconds": self.global_timeout_seconds,
+                "candidate_space_version": "0.3",
+                "selection": "pareto_crowding_with_strategy_diversity",
             },
             "generations": history,
             "best_candidate": best,
+            "pareto_front": pareto_records,
             "budget": {
                 "max_evaluations": self.max_evaluations,
                 "evaluations_used": evaluations_used,
