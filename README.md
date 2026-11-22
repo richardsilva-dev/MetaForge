@@ -115,7 +115,7 @@ The complete rootless Podman smoke passed in GitHub Actions with the pinned imag
 
     python -m pytest
 
-CI covers Python 3.11, 3.12, and 3.13, executes a CLI smoke test, and separately installs LangGraph to test the optional adapter.
+CI covers Python 3.11, 3.12, and 3.13, optional LangGraph/OpenAI Agents SDK adapters, Hypothesis property tests, C/Rust formatting/lint/static analysis and differential backend checks, CodeQL for Python/C++, and a live rootless Podman job that runs both the sandbox isolation probe and scripted LLM code-generation-to-sandbox integration.
 
 ## Security boundary
 
