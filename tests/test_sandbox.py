@@ -50,7 +50,8 @@ elif args and args[0] == "run":
         mount_spec = mount_arg.split("=", 1)[1]
         source_path = mount_spec.split("source=", 1)[1].split(",target=", 1)[0]
         payload = json.loads((Path(source_path) / "input.json").read_text(encoding="utf-8"))
-        print(json.dumps(sorted(payload["values"])))
+        repeats = int(args[-2])
+        print(json.dumps({"output": sorted(payload["values"]), "samples_ns": [1000] * repeats}))
 else:
     raise SystemExit(2)
 """
@@ -71,9 +72,10 @@ def test_sandbox_policy_requires_pinned_image_and_bounded_resources():
 def test_rootless_sandbox_runs_with_required_isolation_flags(tmp_path):
     runtime = _fake_runtime(tmp_path)
     runner = SandboxRunner(SandboxPolicy(image=IMAGE, runtime="podman"), str(runtime))
-    result = runner.run_python("print('candidate placeholder')", [5, 1, 3, 2])
+    result = runner.run_python("def solve(values): return sorted(values)", [5, 1, 3, 2], repeats=2)
     assert result.success is True
     assert result.output == [1, 2, 3, 5]
+    assert len(result.algorithm_samples_seconds) == 2
     args = Path(str(runtime) + ".args").read_text(encoding="utf-8")
     for required in (
         "--network=none", "--read-only", "--cap-drop=ALL",
@@ -121,7 +123,7 @@ def test_host_api_key_is_not_passed_to_runtime_client(tmp_path, monkeypatch):
     runtime = _fake_runtime(tmp_path)
     monkeypatch.setenv("OPENAI_API_KEY", "test-secret-must-not-propagate")
     runner = SandboxRunner(SandboxPolicy(image=IMAGE), str(runtime))
-    result = runner.run_python("print('candidate placeholder')", [2, 1])
+    result = runner.run_python("def solve(values): return sorted(values)", [2, 1])
     assert result.success is True
 
 
