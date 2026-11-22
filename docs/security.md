@@ -34,6 +34,6 @@ The Rust and C backends compile only fixed source files shipped in this reposito
 
 ## V0.6 container sandbox status
 
-The sandbox runner requires a rootless Podman or rootless Docker runtime and an image reference pinned by SHA-256 digest. It does not pull images. The preflight checks rootless mode and local image availability. The run policy disables networking, uses a non-root UID, read-only root filesystem, a read-only bind mount containing only the candidate file, dropped capabilities, no-new-privileges, CPU/memory/PID limits, a no-exec tmpfs, wall-clock timeout, and bounded output streams.
+The sandbox runner requires a rootless Podman or rootless Docker runtime and an image reference pinned by SHA-256 digest. It does not pull images. The preflight checks rootless mode and local image availability. The run policy disables networking, uses a non-root UID, read-only root filesystem, a read-only bind mount containing only candidate.py and input.json, dropped capabilities, no-new-privileges, CPU/memory/PID limits, a no-exec tmpfs, wall-clock timeout, and bounded output streams.
 
 The runner is not connected to the evolution engine. CI uses a fake runtime to test command construction and fail-closed behavior; a real rootless runtime/image has not yet been validated on the target host. Do not enable model-generated source execution until live runtime validation, container escape review, and dedicated-host/VM isolation requirements are satisfied.
