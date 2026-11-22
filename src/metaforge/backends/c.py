@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -63,7 +64,16 @@ class CBackend:
             compile_seconds = time.perf_counter() - started
             if not self.binary_path.is_file():
                 raise RuntimeError("C build completed without producing the expected executable")
-            self._preparation = BackendPreparation(self.name, version, compile_seconds)
+            source_hash = hashlib.sha256(self.source_path.read_bytes()).hexdigest()
+            artifact_hash = hashlib.sha256(self.binary_path.read_bytes()).hexdigest()
+            self._preparation = BackendPreparation(
+                self.name,
+                version,
+                compile_seconds,
+                source_hash,
+                artifact_hash,
+                ("-std=c11", "-O3", "-Wall", "-Wextra", "-Werror"),
+            )
             return self._preparation
 
     def run_repeated(
