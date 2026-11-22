@@ -10,7 +10,7 @@ MetaForge must not delegate correctness, safety approval, resource budgets, or c
 
 ## Decision
 
-Keep the MetaForge core framework-neutral. Use a small typed adapter contract and explicit registry so third-party agents can be plugged in without making the experiment engine depend on one vendor or runtime. The first optional orchestration adapter should target LangGraph because its graph model can preserve deterministic gates and explicit state transitions. Microsoft Agent Framework and CrewAI remain viable adapters, not mandatory core dependencies.
+Keep the MetaForge core framework-neutral. Use a small typed adapter contract and explicit registry so third-party agents can be plugged in without making the experiment engine depend on one vendor or runtime. The first optional orchestration adapter now targets LangGraph because its graph model can preserve deterministic gates and explicit state transitions. Install it with `python -m pip install -e ".[orchestration]"` and call `execute_with_langgraph`. Microsoft Agent Framework and CrewAI remain viable adapters, not mandatory core dependencies.
 
 The current built-in specialists are deterministic reference agents used to test contracts and workflow behavior without API keys. They are not represented as LLM agents. A future adapter may call external agent runtimes, but must return schema-validated data only.
 
