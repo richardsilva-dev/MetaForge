@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any
+from typing import Any, TypedDict
 from metaforge.agents.contracts import AgentTask, AgentResult
 from metaforge.agents.registry import AgentRegistry
 
@@ -11,7 +11,6 @@ def execute_with_langgraph(registry: AgentRegistry,
     it does not grant agents execution privileges or bypass MetaForge gates.
     """
     try:
-        from typing_extensions import TypedDict
         from langgraph.graph import StateGraph, START, END
     except ImportError as exc:
         raise RuntimeError(
