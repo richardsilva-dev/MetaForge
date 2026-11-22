@@ -206,7 +206,7 @@ class SandboxRunner:
     def smoke(self, timeout_seconds: float | None = None) -> SandboxResult:
         """Run only the fixed trusted isolation probe; never executes model output."""
         return self.run_python(
-            "def solve(values):\\n    return sorted(values)\\n",
+            "def solve(values):\n    return sorted(values)\n",
             [7, 2, 9, 1],
             timeout_seconds=timeout_seconds,
             repeats=2,
