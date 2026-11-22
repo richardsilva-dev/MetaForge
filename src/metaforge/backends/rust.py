@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -70,7 +71,21 @@ class RustBackend:
             compile_seconds = time.perf_counter() - started
             if not self.binary_path.is_file():
                 raise RuntimeError("Rust build completed without producing the expected executable")
-            self._preparation = BackendPreparation(self.name, version, compile_seconds)
+            digest = hashlib.sha256()
+            for source in sorted(self.project_root.rglob("*")):
+                if source.is_file() and source.name != "target":
+                    digest.update(source.relative_to(self.project_root).as_posix().encode("utf-8"))
+                    digest.update(b"\\0")
+                    digest.update(source.read_bytes())
+            artifact_hash = hashlib.sha256(self.binary_path.read_bytes()).hexdigest()
+            self._preparation = BackendPreparation(
+                self.name,
+                version,
+                compile_seconds,
+                digest.hexdigest(),
+                artifact_hash,
+                ("cargo", "build", "--release", "--locked", "--offline"),
+            )
             return self._preparation
 
     def run_repeated(
