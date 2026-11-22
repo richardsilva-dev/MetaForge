@@ -16,3 +16,7 @@
 ## Interpretation
 
 Local microbenchmarks are sensitive to CPU frequency, thermal state, background load, interpreter version, allocator behavior, and scheduler decisions. A faster candidate in one run is not evidence of a generally superior algorithm. Use paired repeated trials, representative datasets, and independent environments before promoting an optimization.
+
+## Cross-language backend comparisons
+
+Compile time must be reported separately from algorithm runtime. Record compiler/runtime version, exact build flags, source hash, binary hash, dataset hash, and measurement scope. The current Python backend reports worker-internal elapsed time with tracemalloc active; C and Rust report native algorithm-internal elapsed time without peak-memory measurement. These scopes are not directly comparable. First establish correctness parity and measurement equivalence before introducing cross-language selection or performance rankings.
