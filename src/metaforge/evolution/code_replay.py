@@ -76,6 +76,8 @@ class CodeReplayEngine:
                 fingerprint = candidate.get("fingerprint")
                 if not isinstance(source, str) or not isinstance(fingerprint, str):
                     continue
+                if len(source) > 50_000:
+                    raise ValueError("Candidate source exceeds the replay source limit")
                 try:
                     source_bytes = source.encode("utf-8")
                 except UnicodeEncodeError as exc:
