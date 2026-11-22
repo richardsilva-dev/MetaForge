@@ -46,4 +46,5 @@ def test_scripted_code_agent_executes_only_inside_live_rootless_sandbox():
     assert len(best["algorithm_samples_seconds"]) == 2
     assert best["candidate"]["source_code"] == source
     assert result["sandbox"]["rootless"] is True
+    assert result["sandbox"]["smoke_passed"] is True
     model.assert_complete()
