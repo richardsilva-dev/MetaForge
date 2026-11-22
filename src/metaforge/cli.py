@@ -69,6 +69,10 @@ def main() -> int:
     backend_check.add_argument("--timeout", type=float, default=10.0)
     backend_check.add_argument("--output", type=Path, default=Path(".artifacts/backend-check.json"))
 
+    sandbox_check = sub.add_parser("sandbox-check", help="verify a rootless runtime and pinned sandbox image without executing code")
+    sandbox_check.add_argument("--runtime", choices=["podman", "docker"], default=os.environ.get("METAFORGE_SANDBOX_RUNTIME", "podman"))
+    sandbox_check.add_argument("--image", default=os.environ.get("METAFORGE_SANDBOX_IMAGE"))
+
     replay = sub.add_parser("replay", help="re-run an archived experiment using its stored dataset")
     replay.add_argument("--run", type=Path, required=True, help="path to a prior experiment JSON")
     replay.add_argument("--output", type=Path, default=Path(".artifacts/replay-latest.json"))
@@ -109,6 +113,24 @@ def main() -> int:
         _persist(result, args.output)
         if result["best_candidate"]:
             print("Best:", result["best_candidate"]["candidate"])
+        return 0
+
+    if args.command == "sandbox-check":
+        if not args.image:
+            parser.error("set --image or METAFORGE_SANDBOX_IMAGE to a locally available sha256-pinned image")
+        try:
+            from metaforge.sandbox.policy import SandboxPolicy
+            from metaforge.sandbox.runner import SandboxRunner
+            preparation = SandboxRunner(SandboxPolicy(image=args.image, runtime=args.runtime)).prepare()
+        except Exception as exc:
+            parser.error(f"sandbox preflight failed: {type(exc).__name__}")
+        print({
+            "runtime": preparation.runtime,
+            "runtime_version": preparation.runtime_version,
+            "image": preparation.image,
+            "rootless": preparation.rootless,
+            "code_executed": False,
+        })
         return 0
 
     if args.command == "backend-check":
