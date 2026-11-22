@@ -75,6 +75,12 @@ def render_code_report(result: dict[str, Any]) -> str:
             f"- Correct candidates: {generation.get('valid_count', 0)}",
             "",
         ])
+        for proposal in generation.get("proposals", []):
+            if not proposal.get("success"):
+                lines.append(
+                    f"- Rejected proposal `{proposal.get('task_id', 'unknown')}`: "
+                    f"{proposal.get('error') or proposal.get('review_findings')}"
+                )
         for evaluation in generation.get("evaluations", []):
             candidate = evaluation["candidate"]
             lines.append(
