@@ -6,7 +6,7 @@
 4. Review every candidate descriptor before execution.
 5. Reject incorrect candidates before comparing performance.
 6. Run candidates under equivalent resource limits and repeat measurements.
-7. Report median and distributional metrics; do not overinterpret one timing sample.
+7. Preserve every repeat sample, report the median and median absolute deviation, and do not overinterpret one timing sample. Track runtime and traced Python allocation peak as separate objectives.
 8. Preserve immutable JSON archives, dataset provenance, candidate fingerprints, and parent lineage.
 9. Replay archived CLI experiments to verify the candidate sequence and correctness outcomes.
 10. Treat timing replay as a new measurement, not a bit-for-bit performance reproduction.
