@@ -21,15 +21,28 @@ def _merge(a: list[int]) -> list[int]:
     return out + left[i:] + right[j:]
 
 def _quicksort(a: list[int], policy: str) -> list[int]:
-    if len(a) < 2: return a.copy()
-    if policy == "first": pivot=a[0]
-    elif policy == "last": pivot=a[-1]
-    elif policy == "median3": pivot=sorted((a[0], a[len(a)//2], a[-1]))[1]
-    else: pivot=a[len(a)//2]
-    lo=[x for x in a if x < pivot]
-    eq=[x for x in a if x == pivot]
-    hi=[x for x in a if x > pivot]
-    return _quicksort(lo, policy) + eq + _quicksort(hi, policy)
+    # Explicit work stack prevents recursion-depth crashes on adversarial pivots.
+    output: list[int] = []
+    stack: list[tuple[str, list[int]]] = [("sort", a.copy())]
+    while stack:
+        action, values = stack.pop()
+        if action == "emit":
+            output.extend(values)
+            continue
+        if len(values) < 2:
+            output.extend(values)
+            continue
+        if policy == "first": pivot=values[0]
+        elif policy == "last": pivot=values[-1]
+        elif policy == "median3": pivot=sorted((values[0], values[len(values)//2], values[-1]))[1]
+        else: pivot=values[len(values)//2]
+        lo=[x for x in values if x < pivot]
+        eq=[x for x in values if x == pivot]
+        hi=[x for x in values if x > pivot]
+        stack.append(("sort", hi))
+        stack.append(("emit", eq))
+        stack.append(("sort", lo))
+    return output
 
 def run_candidate(candidate: Candidate, values: list[int]) -> list[int]:
     if candidate.strategy == "builtin": return sorted(values)
