@@ -75,9 +75,12 @@ class CodeReplayEngine:
                 if not isinstance(source, str) or not isinstance(fingerprint, str):
                     continue
                 try:
-                    digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
+                    source_bytes = source.encode("utf-8")
                 except UnicodeEncodeError as exc:
                     raise ValueError("Candidate source is not valid UTF-8") from exc
+                if not source_bytes or len(source_bytes) > 50_000:
+                    raise ValueError("Candidate source exceeds the replay source limit")
+                digest = hashlib.sha256(source_bytes).hexdigest()
                 if digest != fingerprint:
                     raise ValueError("Candidate source fingerprint mismatch; refusing replay")
                 scheduled.setdefault(fingerprint, candidate)
