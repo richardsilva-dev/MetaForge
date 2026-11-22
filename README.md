@@ -102,10 +102,12 @@ A fail-closed Python container runner is implemented but is not connected to evo
 
 Configure the runtime and immutable image reference, then verify the environment without executing any source:
 
-    # Example environment variable names; use an image@sha256:digest reference.
+    # Official Python 3.12 slim Bookworm image, pinned to its multi-platform index digest.
+    podman pull python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df
     $env:METAFORGE_SANDBOX_RUNTIME = "podman"
-    $env:METAFORGE_SANDBOX_IMAGE = "registry.example/python@sha256:<64-hex-digest>"
+    $env:METAFORGE_SANDBOX_IMAGE = "python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df"
     python -m metaforge.cli sandbox-check
+    python -m metaforge.cli sandbox-smoke
 
 The sandbox has only fake-runtime policy/timeout/output tests in CI so far; it has not been validated against a live container engine on the target host. It is therefore not enabled for agent-generated code. Container isolation also does not eliminate kernel/runtime vulnerabilities; use a dedicated isolated host or VM for high-risk experiments.
 
