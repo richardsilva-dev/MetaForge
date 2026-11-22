@@ -29,6 +29,8 @@ def render_code_report(result: dict[str, Any]) -> str:
         f"- Dataset SHA-256: `{result.get('dataset_sha256', 'n/a')}`",
         f"- Sandbox: {sandbox.get('runtime', 'n/a')} / {sandbox.get('runtime_version', 'n/a')}",
         f"- Image: `{sandbox.get('image', 'n/a')}`",
+        f"- Sandbox smoke passed: {sandbox.get('smoke_passed', False)}",
+        f"- Sandbox smoke wall time: {sandbox.get('smoke_wall_seconds', 'n/a')} s",
         "",
         "## Budget",
         "",
