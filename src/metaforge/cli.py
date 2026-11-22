@@ -156,6 +156,10 @@ def main() -> int:
         if not 1 <= args.size <= 100_000:
             parser.error("--size must be 1..100000")
         try:
+            import agents as _agents_sdk
+        except ImportError:
+            parser.error("install the optional SDK with: python -m pip install -e '.[llm]'")
+        try:
             from metaforge.agents.code_designer import OpenAICodeDesigner
             from metaforge.evolution.code_engine import CodeEvolutionEngine
             from metaforge.sandbox.policy import SandboxPolicy
