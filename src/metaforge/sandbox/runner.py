@@ -107,15 +107,12 @@ class SandboxRunner:
     def run_python(self, source_code: str, values: list[int]) -> SandboxResult:
         started = time.perf_counter()
         scope = "rootless_container_end_to_end_wall"
-        try:
-            preparation = self.prepare()
-        except Exception as exc:
-            return SandboxResult(False, None, time.perf_counter() - started, scope,
-                                 f"Sandbox preflight failed: {type(exc).__name__}")
-
         if not isinstance(source_code, str):
             return SandboxResult(False, None, time.perf_counter() - started, scope, "Source must be text")
-        source_bytes = source_code.encode("utf-8")
+        try:
+            source_bytes = source_code.encode("utf-8")
+        except UnicodeEncodeError:
+            return SandboxResult(False, None, time.perf_counter() - started, scope, "Source is not valid UTF-8")
         if not source_bytes or len(source_bytes) > self.policy.max_source_bytes:
             return SandboxResult(False, None, time.perf_counter() - started, scope, "Source size limit exceeded")
         if not isinstance(values, list) or len(values) > self.policy.max_input_items:
@@ -123,6 +120,11 @@ class SandboxRunner:
         if any(type(value) is not int or not -(2**63) <= value < 2**63 for value in values):
             return SandboxResult(False, None, time.perf_counter() - started, scope,
                                  "Input must contain signed 64-bit integers")
+        try:
+            preparation = self.prepare()
+        except Exception as exc:
+            return SandboxResult(False, None, time.perf_counter() - started, scope,
+                                 f"Sandbox preflight failed: {type(exc).__name__}")
 
         env = self._runtime_env()
         runtime = self.runtime_executable or shutil.which(self.policy.runtime)
@@ -136,11 +138,6 @@ class SandboxRunner:
                                      "Workspace path contains an unsupported mount delimiter")
             source_path = workspace / "candidate.py"
             source_path.write_bytes(source_bytes)
-            source_path.chmod(0o444)
-            try:
-                workspace.chmod(0o555)
-            except OSError:
-                pass
             cid_handle = tempfile.NamedTemporaryFile(prefix="metaforge-cid-", delete=False)
             cid_file = Path(cid_handle.name)
             cid_handle.close()
