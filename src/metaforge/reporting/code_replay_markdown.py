@@ -1,0 +1,48 @@
+from __future__ import annotations
+
+from typing import Any
+from metaforge.reporting.code_markdown import _fence
+
+
+def render_code_replay_report(result: dict[str, Any]) -> str:
+    lines = [
+        "# MetaForge — Code Replay Report",
+        "",
+        f"- Replay run ID: `{result.get('run_id', 'n/a')}`",
+        f"- Original run ID: `{result.get('replay_of', 'n/a')}`",
+        f"- Dataset size: {result.get('dataset_size', 0)}",
+        f"- Dataset SHA-256: `{result.get('dataset_sha256', 'n/a')}`",
+        f"- Sandbox smoke passed: {result.get('sandbox', {}).get('smoke_passed', False)}",
+        f"- Candidates re-evaluated: {result.get('budget', {}).get('candidates_evaluated', 0)}",
+        "",
+        "## Candidate results",
+        "",
+    ]
+    for item in result.get("candidate_results", []):
+        candidate = item["candidate"]
+        lines.extend([
+            f"### `{candidate['fingerprint'][:16]}`",
+            "",
+            f"- Original generation: {candidate.get('generation')}",
+            f"- Parent: `{candidate.get('parent_fingerprint') or 'initial'}`",
+            f"- Static review approved: {item['review']['approved']}",
+            f"- Correctness passed: {item['correctness_passed']}",
+            f"- Median algorithm seconds: {item.get('median_algorithm_seconds')}",
+            f"- Samples: {item.get('algorithm_samples_seconds')}",
+            f"- Container wall seconds: {item.get('container_wall_seconds')}",
+        ])
+        if item.get("error"):
+            lines.append(f"- Error: {item['error']}")
+        lines.extend(["", "Source:", "", f"{_fence(candidate['source_code'])}python",
+                      candidate["source_code"], _fence(candidate["source_code"]), ""])
+    best = result.get("best_candidate")
+    if best:
+        lines.extend([
+            "## Best replayed candidate",
+            "",
+            f"- Fingerprint: `{best['candidate']['fingerprint']}`",
+            f"- Median algorithm seconds: {best['median_algorithm_seconds']}",
+            "",
+        ])
+    lines.extend(["## Reproducibility note", "", result.get("note", ""), ""])
+    return "\n".join(lines)
