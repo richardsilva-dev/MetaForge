@@ -198,7 +198,8 @@ def main() -> int:
         try:
             from metaforge.sandbox.policy import SandboxPolicy
             from metaforge.sandbox.runner import SandboxRunner
-            preparation = SandboxRunner(SandboxPolicy(image=args.image, runtime=args.runtime)).prepare()
+            sandbox_runner = SandboxRunner(SandboxPolicy(image=args.image, runtime=args.runtime))
+            preparation = sandbox_runner.prepare()
         except Exception as exc:
             parser.error(f"sandbox preflight failed: {type(exc).__name__}")
         if args.command == "sandbox-check":
@@ -210,13 +211,7 @@ def main() -> int:
                 "code_executed": False,
             })
             return 0
-        smoke_source = """
-def solve(values):
-    return sorted(values)
-"""
-        result = SandboxRunner(SandboxPolicy(image=args.image, runtime=args.runtime)).run_python(
-            smoke_source, [7, 2, 9, 1], repeats=2, smoke_probe=True
-        )
+        result = sandbox_runner.smoke()
         print({
             "runtime": preparation.runtime,
             "image": preparation.image,
