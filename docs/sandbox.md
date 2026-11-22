@@ -2,7 +2,7 @@
 
 ## Status
 
-The fail-closed Python container runner is implemented as an isolated subsystem. It is deliberately not wired into the evolutionary engine and no agent-generated source is executed by default. CI tests use a fake runtime to verify policy construction, rootless preflight behavior, timeout handling, output limits, and cleanup. A real container engine and pinned image still require validation on the operator's host.
+The fail-closed Python container runner is implemented as an isolated subsystem. It is deliberately not wired into the evolutionary engine and no agent-generated source is executed by default. The complete smoke passed in GitHub Actions using rootless Podman 5.7.0 and the pinned Python 3.12 image. The operator's target host still requires its own preflight and smoke validation.
 
 ## Required configuration
 
