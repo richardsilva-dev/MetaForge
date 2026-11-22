@@ -73,17 +73,7 @@ class StaticCodeReviewer:
 
         for statement in tree.body:
             if isinstance(statement, (ast.Import, ast.ImportFrom, ast.FunctionDef)):
-                if isinstance(statement, ast.FunctionDef) and (
-                    statement.decorator_list or statement.args.defaults
-                    or any(value is not None for value in statement.args.kw_defaults)
-                    or statement.returns is not None
-                    or any(arg.annotation is not None for arg in (
-                        statement.args.posonlyargs + statement.args.args + statement.args.kwonlyargs
-                    ))
-                    or (statement.args.vararg and statement.args.vararg.annotation is not None)
-                    or (statement.args.kwarg and statement.args.kwarg.annotation is not None)
-                ):
-                    findings.append("Top-level functions cannot use decorators, defaults, or annotations")
+                pass
             elif isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Constant) and isinstance(statement.value.value, str):
                 if statement is not tree.body[0]:
                     findings.append("Only the module docstring is allowed as a top-level expression")
@@ -114,6 +104,22 @@ class StaticCodeReviewer:
                 for alias in node.names:
                     if alias.name.startswith("_") or (alias.asname and alias.asname.startswith("_")):
                         findings.append("Private imports are not allowed")
+            elif isinstance(node, ast.FunctionDef):
+                if (
+                    node.decorator_list or node.args.defaults
+                    or any(value is not None for value in node.args.kw_defaults)
+                    or node.returns is not None
+                    or any(arg.annotation is not None for arg in (
+                        node.args.posonlyargs + node.args.args + node.args.kwonlyargs
+                    ))
+                    or (node.args.vararg and node.args.vararg.annotation is not None)
+                    or (node.args.kwarg and node.args.kwarg.annotation is not None)
+                ):
+                    findings.append("Functions cannot use decorators, defaults, or annotations")
+            elif isinstance(node, ast.ClassDef):
+                findings.append("Class definitions are not allowed")
+            elif isinstance(node, ast.AsyncFunctionDef):
+                findings.append("Async functions are not allowed")
             elif isinstance(node, ast.Name):
                 if node.id in _FORBIDDEN_NAMES:
                     findings.append(f"Restricted runtime name: {node.id}")
