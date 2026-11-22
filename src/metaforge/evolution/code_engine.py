@@ -132,10 +132,16 @@ class CodeEvolutionEngine:
             raise ValueError("dataset must contain signed 64-bit integers")
 
         # Fail closed before spending model tokens or accepting source proposals.
+        deadline = time.monotonic() + self.global_timeout_seconds
         preparation: SandboxPreparation = self.sandbox_runner.prepare()
         if not preparation.rootless:
             raise RuntimeError("Code evolution requires a rootless sandbox runtime")
-        deadline = time.monotonic() + self.global_timeout_seconds
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("Global time budget exhausted during sandbox preflight")
+        smoke = self.sandbox_runner.smoke(timeout_seconds=remaining)
+        if not smoke.success:
+            raise RuntimeError(f"Rootless sandbox smoke failed: {smoke.error or 'policy verification failed'}")
         calls_used = 0
         stop_reason = "generation_limit"
         seen_fingerprints: set[str] = set()
