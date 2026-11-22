@@ -64,3 +64,17 @@ The provider integration is covered with the Agents SDK's scripted model. A real
 ### Security boundary
 
 Only fixed source files shipped in the repository are compiled. Candidate or LLM-generated source is not accepted by native backend compilers.
+
+## 0.6.0 — 2026-11-22
+
+- Added a fail-closed rootless container runner for Python candidate source.
+- Required immutable SHA-256 image references and local image availability; image pulls are never performed by the runner.
+- Added read-only candidate/input workspace, non-root UID, disabled networking, read-only rootfs, dropped capabilities, no-new-privileges, CPU/memory/PID/swap limits, bounded tmpfs/shared memory, process/file limits, bounded output streams, and container teardown on timeout/overflow.
+- Added preflight and trusted sandbox-smoke CLI commands.
+- Added live rootless Podman CI using the pinned official Python 3.12 slim Bookworm image.
+- The live smoke verifies mount flags, cgroup limits, no-network behavior, non-root identity, privilege/capability restrictions, file limits, and absence of host API credentials.
+- Kept sandboxed generated-code execution disconnected from the evolution engine pending target-host verification and the next code-generation workflow.
+
+### Validation
+
+The complete CI workflow passed on Python 3.11, 3.12, and 3.13; the optional LangGraph/OpenAI Agents SDK job passed; property tests passed; C/Rust build, lint, static analysis, and differential backend checks passed; the rootless Podman smoke passed with the pinned image.
