@@ -34,7 +34,7 @@ class OpenAICodeDesigner:
 
         class CodeProposal(BaseModel):
             model_config = ConfigDict(extra="forbid", strict=True)
-            source_code: str = Field(min_length=1, max_length=200_000)
+            source_code: str = Field(min_length=1, max_length=50_000)
             rationale: str = Field(max_length=1000)
 
         try:
@@ -44,7 +44,7 @@ class OpenAICodeDesigner:
             }
             parent_source = payload["constraints"].get("parent_source")
             if parent_source is not None and (
-                not isinstance(parent_source, str) or len(parent_source.encode("utf-8")) > 200_000
+                not isinstance(parent_source, str) or len(parent_source.encode("utf-8")) > 50_000
             ):
                 return AgentResult(
                     self.name, task.task_id, False,
