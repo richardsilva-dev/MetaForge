@@ -11,7 +11,7 @@ MetaForge explores bounded algorithm variants through a repeatable loop: generat
 - Declarative candidate descriptors with strict allow-list validation.
 - Built-in sort, insertion sort, merge sort, and three-way quicksort variants.
 - Seeded population generation and mutation.
-- Worker-process execution with timeout, input/output limits, and metrics.
+- Worker-process execution with timeout, input validation, post-capture output-size checks, and metrics.
 - Correctness gate against Python's sorted() oracle.
 - Repeated measurements, median runtime, and traced peak Python memory.
 - Elitist selection, JSON experiment history, and Markdown reports.
@@ -62,7 +62,7 @@ python -m pytest
 
 ## Specialist agents (V0.2 in progress)\n\nThe current agent layer defines typed task/result contracts and an explicit registry. The built-in Candidate Designer proposes bounded candidate populations, the Safety Reviewer checks candidate descriptors against the static allow-list, and the Benchmark Analyst summarizes measured results. The evolution engine invokes these roles. These are deterministic reference agents, not LLM agents. An optional LangGraph adapter is available through the `orchestration` extra; agent outputs remain untrusted and cannot override deterministic correctness or security gates. Install with `python -m pip install -e ".[orchestration]"`. See [agent framework selection](docs/agent-framework-selection.md).\n\n## Security boundary
 
-Candidate descriptors are data, not source code. V0.1 only dispatches to trusted implementations shipped with the package. The worker inherits the host user's operating-system permissions; it is not safe for hostile code. Before executing agent-generated code, MetaForge must add a fail-closed OS/container sandbox with an unprivileged identity, minimal filesystem, disabled network, CPU/memory/process/file limits, and reliable cleanup. Never expose credentials or host sockets.
+The output-size threshold is checked after the worker output has been captured; it is not a hard memory limit. V0.1 has no OS-level CPU or memory sandbox. Candidate descriptors are data, not source code. V0.1 only dispatches to trusted implementations shipped with the package. The worker inherits the host user's operating-system permissions; it is not safe for hostile code. Before executing agent-generated code, MetaForge must add a fail-closed OS/container sandbox with an unprivileged identity, minimal filesystem, disabled network, CPU/memory/process/file limits, and reliable cleanup. Never expose credentials or host sockets.
 
 ## Roadmap
 
