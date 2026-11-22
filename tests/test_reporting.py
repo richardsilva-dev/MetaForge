@@ -7,3 +7,10 @@ def test_report_and_persistence(tmp_path):
     assert "MetaForge experiment report" in render_report(result)
     path=save_run(result,tmp_path/"runs"/"run.json")
     assert path.exists() and path.read_text().startswith("{")
+
+def test_report_contains_reproducibility_metadata_and_lineage():
+    result = EvolutionEngine(repeats=1, population_size=4).run([3, 1, 2], generations=1)
+    report = render_report(result)
+    assert "Dataset SHA-256" in report
+    assert "Environment" in report
+    assert "Run ID" in report
