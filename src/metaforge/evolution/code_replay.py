@@ -55,14 +55,29 @@ class CodeReplayEngine:
             raise ValueError("Original artifact has an invalid repeat count")
 
         scheduled: dict[str, dict[str, Any]] = {}
-        for generation in original.get("generations", []):
-            for evaluation in generation.get("evaluations", []):
+        generations = original.get("generations")
+        if not isinstance(generations, list):
+            raise ValueError("Original artifact has no valid generation schedule")
+        for generation in generations:
+            if not isinstance(generation, dict):
+                raise ValueError("Original generation record is invalid")
+            evaluations = generation.get("evaluations", [])
+            if not isinstance(evaluations, list):
+                raise ValueError("Original evaluation schedule is invalid")
+            for evaluation in evaluations:
+                if not isinstance(evaluation, dict):
+                    raise ValueError("Original candidate evaluation is invalid")
                 candidate = evaluation.get("candidate", {})
+                if not isinstance(candidate, dict):
+                    raise ValueError("Original candidate record is invalid")
                 source = candidate.get("source_code")
                 fingerprint = candidate.get("fingerprint")
                 if not isinstance(source, str) or not isinstance(fingerprint, str):
                     continue
-                digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
+                try:
+                    digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
+                except UnicodeEncodeError as exc:
+                    raise ValueError("Candidate source is not valid UTF-8") from exc
                 if digest != fingerprint:
                     raise ValueError("Candidate source fingerprint mismatch; refusing replay")
                 scheduled.setdefault(fingerprint, candidate)
@@ -121,11 +136,14 @@ class CodeReplayEngine:
                 record["error"] = f"Sandbox runner failed: {type(exc).__name__}"
                 results.append(record)
                 continue
+            if not isinstance(execution, SandboxResult):
+                record["error"] = "Sandbox returned an invalid result type"
+                results.append(record)
+                continue
             record["container_wall_seconds"] = execution.wall_seconds
             samples = execution.algorithm_samples_seconds
             valid_samples = (
-                isinstance(execution, SandboxResult)
-                and len(samples) == repeats
+                len(samples) == repeats
                 and all(type(value) in (int, float) and math.isfinite(value) and value >= 0 for value in samples)
             )
             if execution.success and valid_samples:
