@@ -104,8 +104,9 @@ Before enabling agent-generated code execution, implement and independently test
 - **V0.2 (released):** specialist-agent contracts, mandatory safety review, bounded scheduling, provenance, lineage, and replay.
 - **V0.3 (released):** expanded algorithm families, crossover, mutation, Pareto selection, diversity preservation, raw measurement samples, and exact candidate-schedule replay.
 
-- **V0.4 (in progress):** optional LLM-based candidate proposals through an established agent runtime, using strict structured outputs and deterministic gates.
-- **V0.5:** C/Rust backend interfaces with separate compilation/runtime measurement.
+- **V0.4 (released):** optional OpenAI Agents SDK candidate proposals through strict structured outputs, no tools, one-turn/time limits, allow-list validation, and deterministic fallback.
+- **V0.5 (in progress):** versioned backend interfaces and isolated Rust/C trusted implementations with compilation and runtime measurements kept separate.
+
 - **V0.6:** hardened sandbox, fuzzing, and sanitizers.
 - **V1.0:** extensible multi-problem research laboratory.
 
