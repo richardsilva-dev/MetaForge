@@ -11,7 +11,7 @@
 7. Compare outputs with an independent correctness oracle; incorrect candidates cannot be ranked.
 8. Measure repeated runtime and traced Python memory.
 9. Ask the Benchmark Analyst for descriptive summaries.
-10. Select valid candidates, preserve elite candidates, mutate children, and record parent fingerprints.
+10. Select valid candidates using non-dominated sorting and crowding distance across runtime and traced allocation peak; preserve algorithm-family diversity, carry elites, create children through crossover/mutation, and record all parent fingerprints.
 11. Persist run identity, dataset digest, environment metadata, configuration, per-generation results, and Markdown summary.
 
 ## Agent architecture
