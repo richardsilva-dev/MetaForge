@@ -60,7 +60,7 @@ Outputs are written to `.artifacts/latest.json` and `.artifacts/latest.md`.
 python -m pytest
 ```
 
-## Security boundary
+## Specialist agents (V0.2 in progress)\n\nThe current agent layer defines typed task/result contracts and an explicit registry. The built-in Candidate Designer proposes bounded candidate populations, the Safety Reviewer checks candidate descriptors against the static allow-list, and the Benchmark Analyst summarizes measured results. The evolution engine invokes these roles. These are deterministic reference agents, not LLM agents. External runtimes can be integrated through adapters; agent outputs remain untrusted and cannot override deterministic correctness or security gates. See [agent framework selection](docs/agent-framework-selection.md).\n\n## Security boundary
 
 Candidate descriptors are data, not source code. V0.1 only dispatches to trusted implementations shipped with the package. The worker inherits the host user's operating-system permissions; it is not safe for hostile code. Before executing agent-generated code, MetaForge must add a fail-closed OS/container sandbox with an unprivileged identity, minimal filesystem, disabled network, CPU/memory/process/file limits, and reliable cleanup. Never expose credentials or host sockets.
 
