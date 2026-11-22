@@ -24,3 +24,16 @@ def test_candidate_rejects_invalid_hybrid_cutoff():
 def test_candidate_rejects_cutoff_for_non_hybrid_strategy():
     with pytest.raises(ValueError):
         Candidate("heapsort", "middle", 32)
+
+def test_all_generated_candidates_match_independent_sorting_oracle():
+    import random
+    from metaforge.candidates.generator import CandidateGenerator
+
+    rng = random.Random(2026)
+    candidates = CandidateGenerator(seed=3).initial_population(15)
+    for candidate in candidates:
+        for _ in range(40):
+            values = [rng.randint(-20, 20) for _ in range(rng.randint(0, 100))]
+            original = values.copy()
+            assert run_candidate(candidate, values) == sorted(original)
+            assert values == original
