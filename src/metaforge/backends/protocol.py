@@ -11,6 +11,9 @@ class BackendPreparation:
     backend: str
     version: str
     compile_seconds: float
+    source_sha256: str | None = None
+    artifact_sha256: str | None = None
+    build_flags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
