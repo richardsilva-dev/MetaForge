@@ -25,11 +25,11 @@ class SandboxPolicy:
             raise ValueError("Sandbox image must be pinned to an immutable sha256 digest")
         if self.runtime not in {"podman", "docker"}:
             raise ValueError("Sandbox runtime must be podman or docker")
-        if not 0.1 <= self.timeout_seconds <= 120:
+        if type(self.timeout_seconds) not in (int, float) or not 0.1 <= self.timeout_seconds <= 120:
             raise ValueError("Sandbox timeout must be 0.1..120 seconds")
         if type(self.memory_mb) is not int or not 64 <= self.memory_mb <= 2048:
             raise ValueError("Sandbox memory limit must be 64..2048 MiB")
-        if not 0.1 <= self.cpu_limit <= 4:
+        if type(self.cpu_limit) not in (int, float) or not 0.1 <= self.cpu_limit <= 4:
             raise ValueError("Sandbox CPU limit must be 0.1..4")
         if type(self.pids_limit) is not int or not 16 <= self.pids_limit <= 256:
             raise ValueError("Sandbox pids limit must be 16..256")
