@@ -21,9 +21,9 @@ class SandboxPolicy:
     max_output_bytes: int = 1_000_000
 
     def __post_init__(self) -> None:
-        if not _IMAGE_DIGEST.fullmatch(self.image):
+        if not isinstance(self.image, str) or not _IMAGE_DIGEST.fullmatch(self.image):
             raise ValueError("Sandbox image must be pinned to an immutable sha256 digest")
-        if self.runtime not in {"podman", "docker"}:
+        if not isinstance(self.runtime, str) or self.runtime not in {"podman", "docker"}:
             raise ValueError("Sandbox runtime must be podman or docker")
         if type(self.timeout_seconds) not in (int, float) or not 0.1 <= self.timeout_seconds <= 120:
             raise ValueError("Sandbox timeout must be 0.1..120 seconds")
