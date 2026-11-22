@@ -68,7 +68,7 @@ class OpenAICodeDesigner:
                 "64-bit integers and returns a list of those integers in ascending order. The trusted host "
                 "wrapper supplies a fresh copy for each timed repeat, validates the result, and serializes it. "
                 "Do not read files or stdin, do not print, and do not access environment variables. Use only top-level imports, literal constants, helper functions, and solve(values); do not use classes, decorators, default arguments, or type annotations. "
-                "Use only Python standard-library imports from this allow-list: json, sys, heapq, bisect, "
+                "Use only Python standard-library imports from this allow-list: heapq, bisect, "
                 "math, operator, collections, itertools, functools, array, typing. "
                 "Do not use network, subprocesses, threads, multiprocessing, environment variables, "
                 "dynamic code execution, reflection, or any file access. "
