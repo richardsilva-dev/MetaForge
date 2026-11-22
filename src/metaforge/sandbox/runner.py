@@ -138,9 +138,8 @@ class SandboxRunner:
                                      "Workspace path contains an unsupported mount delimiter")
             source_path = workspace / "candidate.py"
             source_path.write_bytes(source_bytes)
-            cid_handle = tempfile.NamedTemporaryFile(prefix="metaforge-cid-", delete=False)
-            cid_file = Path(cid_handle.name)
-            cid_handle.close()
+            cid_directory = tempfile.TemporaryDirectory(prefix="metaforge-cid-")
+            cid_file = Path(cid_directory.name) / "container.id"
             payload = json.dumps({"values": values}, separators=(",", ":")).encode("utf-8")
             mount = f"type=bind,source={workspace},target=/workspace,readonly"
             command = [
@@ -171,7 +170,7 @@ class SandboxRunner:
                     cwd=workspace,
                 )
             except OSError as exc:
-                cid_file.unlink(missing_ok=True)
+                cid_directory.cleanup()
                 return SandboxResult(False, None, time.perf_counter() - started, scope,
                                      f"Sandbox runtime launch failed: {type(exc).__name__}")
 
@@ -229,7 +228,7 @@ class SandboxRunner:
                 thread.join(timeout=2)
 
             elapsed = time.perf_counter() - started
-            cid_file.unlink(missing_ok=True)
+            cid_directory.cleanup()
             if timed_out:
                 return SandboxResult(False, None, elapsed, scope, "Sandbox execution timed out")
             if overflow.is_set():
