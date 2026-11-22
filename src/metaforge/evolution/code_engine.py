@@ -183,7 +183,7 @@ class CodeEvolutionEngine:
                 )
                 calls_used += 1
                 try:
-                    agent_result = self.designer.run(task)
+                    agent_result = self.designer.run(task, timeout_seconds=remaining)
                 except Exception as exc:
                     proposals.append({
                         "task_id": task.task_id,
