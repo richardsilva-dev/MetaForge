@@ -24,7 +24,7 @@ A candidate fingerprint identifies its declarative algorithm parameters. It is d
 
 ## Reproducibility
 
-Each run records a unique ID, UTC timestamps, seed, SHA-256 of the canonical dataset encoding, Python/runtime/platform metadata, source revision when supplied by the environment, and experiment configuration. CLI runs preserve their synthetic input dataset in the archive. Replay compares candidate fingerprints and correctness outcomes; exact timing reproduction is not promised.
+Each run records a unique ID, UTC timestamps, seed, SHA-256 of the canonical dataset encoding, Python/runtime/platform metadata, source revision when supplied by the environment, and experiment configuration. CLI runs preserve their synthetic input dataset in the archive. Every generation stores its exact candidate population and lineage. Replay consumes that stored schedule rather than re-running timing-dependent selection, so the candidate sequence is reproducible. Exact timing reproduction is not promised.
 
 ## Execution boundary
 
