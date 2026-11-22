@@ -110,3 +110,18 @@ def test_sandbox_preflight_happens_before_any_model_call():
     with pytest.raises(RuntimeError):
         engine.run([2, 1])
     assert designer.tasks == []
+
+def test_failed_sandbox_smoke_blocks_all_model_calls():
+    class FailedSmokeRunner(FakeSandboxRunner):
+        def smoke(self, timeout_seconds=None):
+            return SandboxResult(False, None, 0.1, "fake_internal", "probe failed", ())
+
+    designer = FakeDesigner([SOURCE_A])
+    sandbox = FailedSmokeRunner()
+    engine = CodeEvolutionEngine(
+        designer, sandbox, population_size=1, generations=1, repeats=1,
+        max_agent_calls=1, global_timeout_seconds=30,
+    )
+    with pytest.raises(RuntimeError, match="sandbox smoke failed"):
+        engine.run([2, 1])
+    assert designer.tasks == []
