@@ -31,5 +31,5 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e ".[dev,orchestration]"
+      - run: python -m pip install -e ".[dev,orchestration,llm]"
       - run: python -m pytest
