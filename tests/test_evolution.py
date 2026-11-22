@@ -46,3 +46,37 @@ def test_run_records_environment_dataset_hash_and_candidate_lineage():
     if len(result["generations"]) > 1:
         later = result["generations"][1]["evaluations"]
         assert all(item["lineage"]["operator"] in {"elite_carryover", "mutation"} for item in later)
+
+def test_pareto_selection_preserves_time_memory_tradeoffs():
+    from metaforge.evolution.engine import Evaluation, _pareto_front, _select_parents
+    from metaforge.candidates.models import Candidate
+
+    fastest = Evaluation(Candidate("builtin"), True, 1.0, 100)
+    memory_efficient = Evaluation(Candidate("merge"), True, 2.0, 50)
+    dominated = Evaluation(Candidate("insertion"), True, 3.0, 200)
+    front = _pareto_front([fastest, memory_efficient, dominated])
+    assert {item.candidate.strategy for item in front} == {"builtin", "merge"}
+    selected = _select_parents([fastest, memory_efficient, dominated], limit=2)
+    assert {item.candidate.strategy for item in selected} == {"builtin", "merge"}
+
+
+def test_generation_records_pareto_front_and_strategy_diversity():
+    result = EvolutionEngine(seed=19, repeats=1, population_size=9).run([9, 1, 5, 3, 2], generations=1)
+    generation = result["generations"][0]
+    assert generation["strategy_diversity"] >= 5
+    assert generation["pareto_front_fingerprints"]
+    assert result["pareto_front"]
+
+
+def test_candidate_generator_supports_crossover_and_mutation():
+    from metaforge.candidates.generator import CandidateGenerator
+    from metaforge.candidates.models import Candidate
+
+    generator = CandidateGenerator(seed=41)
+    first = Candidate("quicksort", "first")
+    second = Candidate("hybrid", "median3", 32)
+    child = generator.crossover(first, second)
+    assert child.strategy in {"quicksort", "hybrid"}
+    assert child.fingerprint != ""
+    mutated = generator.mutate(first)
+    assert mutated != first
