@@ -369,6 +369,9 @@ class EvolutionEngine:
                 record["median_seconds"],
                 record["median_peak_bytes"],
                 lineage=record.get("lineage"),
+                runtime_samples_seconds=record.get("runtime_samples_seconds"),
+                peak_samples_bytes=record.get("peak_samples_bytes"),
+                runtime_mad_seconds=record.get("runtime_mad_seconds"),
             )
             for record in all_valid
         ]
