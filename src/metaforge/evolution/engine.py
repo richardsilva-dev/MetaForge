@@ -11,6 +11,7 @@ import time
 from typing import Any
 from uuid import uuid4
 
+from metaforge.agents.contracts import SpecialistAgent
 from metaforge.agents.orchestrator import AgentOrchestrator
 from metaforge.candidates.generator import CandidateGenerator
 from metaforge.candidates.models import Candidate
@@ -145,6 +146,7 @@ class EvolutionEngine:
         max_evaluations: int = 64,
         max_workers: int = 2,
         global_timeout_seconds: float = 120.0,
+        candidate_designer: SpecialistAgent | None = None,
     ) -> None:
         if not 1 <= repeats <= 20 or not 2 <= population_size <= 32:
             raise ValueError("repeats must be 1..20 and population_size 2..32")
@@ -156,7 +158,7 @@ class EvolutionEngine:
             raise ValueError("global_timeout_seconds must be positive")
         self.runner = runner or CandidateRunner()
         self.generator = CandidateGenerator(seed)
-        self.agents = AgentOrchestrator(seed)
+        self.agents = AgentOrchestrator(seed, candidate_designer)
         self.random = random.Random(seed)
         self.seed = seed
         self.repeats = repeats
@@ -247,6 +249,10 @@ class EvolutionEngine:
             }
         else:
             population, lineage_by_fingerprint = load_scheduled_population(0)
+        agent_design_metadata = (
+            self.agents.last_design_metadata if candidate_schedule is None
+            else {"mode": "archived_candidate_schedule", "llm_invoked": False}
+        )
         history: list[dict[str, Any]] = []
         evaluations_used = 0
         stop_reason = "generation_limit"
@@ -432,6 +438,7 @@ class EvolutionEngine:
             "dataset_sha256": dataset_sha256,
             "seed": self.seed,
             "environment": runtime_metadata(),
+            "agent_design": agent_design_metadata,
             "configuration": {
                 "generations_requested": generations,
                 "population_size": self.population_size,
@@ -440,6 +447,7 @@ class EvolutionEngine:
                 "max_workers": self.max_workers,
                 "global_timeout_seconds": self.global_timeout_seconds,
                 "candidate_space_version": "0.3",
+                "candidate_designer_mode": "llm" if self.agents.external_designer_enabled else "deterministic",
                 "selection": "pareto_crowding_with_strategy_diversity",
             },
             "generations": history,
