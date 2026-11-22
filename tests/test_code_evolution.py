@@ -77,6 +77,7 @@ def test_code_evolution_runs_reviewed_candidates_only_and_tracks_lineage():
     result = engine.run([5, 1, 4, 2, 3])
     assert result["best_candidate"] is not None
     assert result["budget"]["agent_calls_used"] == 4
+    assert result["sandbox"]["smoke_passed"] is True
     assert len(sandbox.run_calls) == 5
     assert sandbox.run_calls[0][4] is True
     assert all(call[4] is False for call in sandbox.run_calls[1:])
