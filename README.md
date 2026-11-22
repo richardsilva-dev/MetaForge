@@ -41,7 +41,7 @@ MetaForge runs bounded experiments over algorithm candidates. It generates candi
           |
     Immutable JSON archive + Markdown report
 
-Agent output is untrusted input. Agents can propose or summarize; only deterministic code decides whether a candidate passes safety and correctness gates.
+Agent output is untrusted input. Agents can propose or summarize; only deterministic code decides whether a candidate passes safety and correctness gates. The optional LLM designer is used only for the initial candidate population; later generations use the deterministic evolutionary operators.
 
 ## Requirements and installation
 
@@ -56,6 +56,19 @@ Agent output is untrusted input. Agents can propose or summarize; only determini
 Optional LangGraph integration:
 
     python -m pip install -e ".[dev,orchestration]"
+
+Optional OpenAI Agents SDK candidate designer:
+
+    python -m pip install -e ".[dev,llm]"
+
+To enable one bounded LLM proposal call for the initial population, configure the API key and model in the shell, then opt in:
+
+    # PowerShell
+    $env:OPENAI_API_KEY = "your-api-key"
+    $env:METAFORGE_AGENT_MODEL = "your-available-model"
+    python -m metaforge.cli run --llm-proposals --size 200 --generations 3
+
+The LLM adapter has no tools or handoffs, uses a strict structured output, limits the model-call timeout and run to one turn, and disables sensitive trace payloads. Proposals must match the registered candidate allow-list. Invalid or insufficient proposals are filled by the deterministic generator. The LLM never writes or executes source code. The default mode remains deterministic and makes no API calls.
 
 ## Run an experiment
 
