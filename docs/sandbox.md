@@ -7,7 +7,7 @@ The fail-closed Python container runner is implemented as an isolated subsystem.
 ## Required configuration
 
 - Rootless Podman or rootless Docker.
-- A locally available Python image referenced by immutable SHA-256 digest.
+- A locally available Python image referenced by immutable SHA-256 digest. The currently documented reference is `python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df`, listed as the official multi-platform Python 3.12 slim Bookworm image on Docker Hub. Verify the digest and platform before use.
 - The image must contain Python 3 and the standard library.
 - The image must not require network access at runtime.
 - The runtime must support memory, CPU, PID, read-only rootfs, tmpfs, and user restrictions.
@@ -17,7 +17,7 @@ Set:
 - `METAFORGE_SANDBOX_RUNTIME=podman` (or `docker` only when its security options report rootless mode).
 - `METAFORGE_SANDBOX_IMAGE=repository/name@sha256:<64 lowercase hex characters>`.
 
-Run `python -m metaforge.cli sandbox-check`. This performs preflight only; it does not execute source code and does not pull images.
+Run `python -m metaforge.cli sandbox-check` for preflight only. Then run `python -m metaforge.cli sandbox-smoke` to execute a fixed trusted probe that checks non-root UID, no network, read-only root filesystem/workspace, and absence of OPENAI_API_KEY inside the container. Neither command pulls images.
 
 ## Enforced container configuration
 
