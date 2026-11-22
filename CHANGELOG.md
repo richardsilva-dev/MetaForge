@@ -49,3 +49,18 @@ All candidate strategies remain package-owned allow-listed Python functions. The
 ### Live-provider validation
 
 The provider integration is covered with the Agents SDK's scripted model. A real provider request still requires the user's own API key and model access; credentials are never stored in the repository or experiment artifacts.
+
+## 0.5.0 — 2026-11-22
+
+- Added a versioned execution-backend protocol and Python adapter.
+- Added trusted Rust and C11 backends for built-in sort, heapsort, and shellsort.
+- Rust compilation is dependency-free and runs Cargo in offline, locked mode.
+- Native backend execution uses minimal child-process environments and bounded input/time limits.
+- Recorded compiler/runtime versions, build flags, source hashes, binary hashes, and compilation duration separately from algorithm runtime.
+- Added backend-check CLI command to compare outputs against Python's independent sorting oracle.
+- Added CI compilation and differential correctness tests for both Rust and C backends.
+- Kept native peak-memory metrics explicitly unavailable rather than presenting incomparable measurements as equivalent.
+
+### Security boundary
+
+Only fixed source files shipped in the repository are compiled. Candidate or LLM-generated source is not accepted by native backend compilers.
