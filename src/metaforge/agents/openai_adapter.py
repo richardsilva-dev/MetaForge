@@ -25,7 +25,7 @@ class OpenAICandidateDesigner:
     def run(self, task: AgentTask) -> AgentResult:
         try:
             from agents import Agent, ModelSettings, RunConfig, Runner
-            from pydantic import BaseModel, ConfigDict
+            from pydantic import BaseModel, ConfigDict, Field
         except ImportError:
             return AgentResult(
                 self.name,
@@ -42,8 +42,8 @@ class OpenAICandidateDesigner:
 
         class CandidateProposal(BaseModel):
             model_config = ConfigDict(extra="forbid", strict=True)
-            candidates: list[CandidateProposalItem]
-            rationale: str
+            candidates: list[CandidateProposalItem] = Field(max_length=32)
+            rationale: str = Field(max_length=1000)
 
         try:
             payload = {
