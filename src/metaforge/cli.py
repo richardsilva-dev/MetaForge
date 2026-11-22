@@ -6,9 +6,13 @@ import json
 import os
 import random
 from pathlib import Path
+import statistics
 from typing import Any
+from uuid import uuid4
 
 from metaforge.evolution.engine import EvolutionEngine
+from metaforge.candidates.models import Candidate
+from metaforge.backends.python import PythonBackend
 from metaforge.reporting.markdown import render_report
 from metaforge.storage.json_store import archive_run, save_run
 
@@ -55,6 +59,15 @@ def main() -> int:
     run.add_argument("--llm-timeout", type=float, default=25.0)
     run.add_argument("--output", type=Path, default=Path(".artifacts/latest.json"))
 
+    backend_check = sub.add_parser("backend-check", help="compare correctness across Python and compiled backends")
+    backend_check.add_argument("--backend", choices=["rust", "c", "both"], default="both")
+    backend_check.add_argument("--strategy", choices=["builtin", "heapsort", "shellsort"], default="heapsort")
+    backend_check.add_argument("--size", type=int, default=1000)
+    backend_check.add_argument("--seed", type=int, default=7)
+    backend_check.add_argument("--repeats", type=int, default=3)
+    backend_check.add_argument("--timeout", type=float, default=10.0)
+    backend_check.add_argument("--output", type=Path, default=Path(".artifacts/backend-check.json"))
+
     replay = sub.add_parser("replay", help="re-run an archived experiment using its stored dataset")
     replay.add_argument("--run", type=Path, required=True, help="path to a prior experiment JSON")
     replay.add_argument("--output", type=Path, default=Path(".artifacts/replay-latest.json"))
@@ -96,6 +109,69 @@ def main() -> int:
         if result["best_candidate"]:
             print("Best:", result["best_candidate"]["candidate"])
         return 0
+
+    if args.command == "backend-check":
+        if not 1 <= args.size <= 100_000 or not 1 <= args.repeats <= 20 or args.timeout <= 0:
+            parser.error("backend-check size, repeats, or timeout is outside allowed bounds")
+        dataset = _dataset(args.seed, args.size)
+        candidate = Candidate(args.strategy)
+        expected = sorted(dataset)
+        backends = [PythonBackend()]
+        if args.backend in {"rust", "both"}:
+            from metaforge.backends.rust import RustBackend
+            backends.append(RustBackend(timeout_seconds=args.timeout))
+        if args.backend in {"c", "both"}:
+            from metaforge.backends.c import CBackend
+            backends.append(CBackend(timeout_seconds=args.timeout))
+        results = []
+        for backend in backends:
+            try:
+                preparation = backend.prepare()
+                runs = backend.run_repeated(candidate, dataset, args.repeats, args.timeout)
+                correct = len(runs) == args.repeats and all(
+                    item.success and item.output == expected for item in runs
+                )
+                if not correct:
+                    results.append({
+                        "backend": backend.name,
+                        "version": preparation.version,
+                        "compile_seconds": preparation.compile_seconds,
+                        "correctness_passed": False,
+                        "error": next((item.error for item in runs if not item.success), "Output mismatch"),
+                    })
+                    continue
+                times = [item.elapsed_seconds for item in runs if item.elapsed_seconds is not None]
+                peaks = [item.peak_bytes for item in runs if item.peak_bytes is not None]
+                results.append({
+                    "backend": backend.name,
+                    "version": preparation.version,
+                    "compile_seconds": preparation.compile_seconds,
+                    "correctness_passed": True,
+                    "median_algorithm_seconds": statistics.median(times),
+                    "median_peak_bytes": statistics.median(peaks) if peaks else None,
+                    "measurement_scope": runs[0].measurement_scope,
+                })
+            except Exception as exc:
+                results.append({
+                    "backend": backend.name,
+                    "correctness_passed": False,
+                    "error": f"{type(exc).__name__}: backend preparation or execution failed",
+                })
+        report = {
+            "schema_version": "1.0",
+            "run_id": uuid4().hex,
+            "problem": "integer_sort",
+            "strategy": args.strategy,
+            "dataset_size": len(dataset),
+            "seed": args.seed,
+            "results": results,
+            "comparison_note": "Compile time is separate. Runtime and memory metrics have backend-specific scopes and must not be treated as directly comparable.",
+        }
+        save_run(report, args.output)
+        for item in results:
+            print(item)
+        print(f"Report: {args.output}")
+        return 0 if all(item.get("correctness_passed") for item in results) else 1
 
     try:
         original = json.loads(args.run.read_text(encoding="utf-8"))
