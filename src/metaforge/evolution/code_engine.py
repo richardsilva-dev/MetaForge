@@ -5,12 +5,15 @@ import json
 import math
 import statistics
 import time
+from datetime import datetime, timezone
+from uuid import uuid4
 from dataclasses import dataclass
 from typing import Any
 
 from metaforge.agents.code_safety import CodeReviewResult, StaticCodeReviewer
 from metaforge.agents.contracts import AgentResult, AgentTask
 from metaforge.sandbox.runner import SandboxPreparation, SandboxRunner
+from metaforge.evolution.metadata import runtime_metadata
 
 
 @dataclass(frozen=True, slots=True)
@@ -302,6 +305,10 @@ class CodeEvolutionEngine:
         ) if all_valid else None
         return {
             "schema_version": "1.0",
+            "run_id": uuid4().hex,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "engine_version": "0.7.0-dev",
+            "environment": runtime_metadata(),
             "engine": "metaforge_code_evolution",
             "problem": "integer_sort",
             "seed": self.seed,
