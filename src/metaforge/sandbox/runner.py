@@ -15,6 +15,103 @@ from typing import Any
 from metaforge.sandbox.policy import SandboxPolicy
 
 
+_RUNNER_SOURCE = r"""
+import json, os, resource, runpy, socket, sys, time
+
+def fail(code):
+    raise SystemExit(code)
+
+def verify_sandbox():
+    if os.geteuid() == 0:
+        fail(10)
+    mounts = {}
+    with open("/proc/self/mountinfo", encoding="utf-8") as handle:
+        for line in handle:
+            fields = line.split()
+            if len(fields) > 5:
+                mounts[fields[4]] = set(fields[5].split(","))
+    if "ro" not in mounts.get("/", set()):
+        fail(11)
+    if "ro" not in mounts.get("/workspace", set()):
+        fail(12)
+    if "noexec" not in mounts.get("/tmp", set()):
+        fail(13)
+    status = {}
+    with open("/proc/self/status", encoding="utf-8") as handle:
+        for line in handle:
+            if ":" in line:
+                key, value = line.split(":", 1)
+                status[key] = value.strip()
+    if status.get("NoNewPrivs") != "1":
+        fail(14)
+    if int(status.get("CapEff", "1"), 16) != 0:
+        fail(15)
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if soft > 64 or hard > 64:
+        fail(16)
+    soft, hard = resource.getrlimit(resource.RLIMIT_FSIZE)
+    if soft > 1_000_000 or hard > 1_000_000:
+        fail(17)
+    soft, hard = resource.getrlimit(resource.RLIMIT_CORE)
+    if soft != 0 or hard != 0:
+        fail(18)
+    for path, limit in (
+        ("/sys/fs/cgroup/memory.max", 256 * 1024 * 1024),
+        ("/sys/fs/cgroup/pids.max", 64),
+    ):
+        with open(path, encoding="utf-8") as handle:
+            value = handle.read().strip()
+        if value == "max" or int(value) > limit:
+            fail(19)
+    with open("/sys/fs/cgroup/cpu.max", encoding="utf-8") as handle:
+        quota, period = handle.read().split()
+    if quota == "max" or int(quota) <= 0 or int(period) <= 0 or int(quota) / int(period) > 1.01:
+        fail(20)
+    with open("/sys/fs/cgroup/memory.swap.max", encoding="utf-8") as handle:
+        if handle.read().strip() != "0":
+            fail(23)
+    shm = os.statvfs("/dev/shm")
+    if shm.f_frsize * shm.f_blocks > 16 * 1024 * 1024:
+        fail(24)
+    tmp = os.statvfs("/tmp")
+    if tmp.f_frsize * tmp.f_blocks > 16 * 1024 * 1024:
+        fail(25)
+    if "OPENAI_API_KEY" in os.environ:
+        fail(21)
+    try:
+        socket.create_connection(("1.1.1.1", 53), timeout=0.5)
+    except OSError:
+        pass
+    else:
+        fail(22)
+
+if sys.argv[4] == "1":
+    verify_sandbox()
+
+with open(sys.argv[2], encoding="utf-8") as handle:
+    payload = json.load(handle)
+values = payload["values"]
+namespace = runpy.run_path(sys.argv[1], run_name="metaforge_candidate")
+solve = namespace.get("solve")
+if not callable(solve):
+    fail(30)
+expected = sorted(values)
+samples_ns = []
+result = None
+for _ in range(int(sys.argv[3])):
+    sample = values.copy()
+    started = time.perf_counter_ns()
+    result = solve(sample)
+    elapsed = time.perf_counter_ns() - started
+    if not isinstance(result, list) or any(type(value) is not int for value in result):
+        fail(31)
+    if result != expected:
+        fail(32)
+    samples_ns.append(max(0, elapsed))
+print(json.dumps({"output": result, "samples_ns": samples_ns}, separators=(",", ":")))
+"""
+
+
 @dataclass(frozen=True, slots=True)
 class SandboxPreparation:
     runtime: str
@@ -30,6 +127,7 @@ class SandboxResult:
     wall_seconds: float
     measurement_scope: str
     error: str | None = None
+    algorithm_samples_seconds: tuple[float, ...] = ()
 
 
 class SandboxRunner:
@@ -40,6 +138,8 @@ class SandboxRunner:
         policy: SandboxPolicy,
         runtime_executable: str | None = None,
     ) -> None:
+        if not isinstance(policy, SandboxPolicy):
+            raise TypeError("policy must be a SandboxPolicy")
         self.policy = policy
         self.runtime_executable = runtime_executable
         self._preparation: SandboxPreparation | None = None
@@ -48,7 +148,8 @@ class SandboxRunner:
     def _runtime_env(self) -> dict[str, str]:
         allowed = (
             "PATH", "HOME", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG",
-            "CONTAINER_HOST", "XDG_RUNTIME_DIR", "SYSTEMROOT", "WINDIR", "USERPROFILE", "APPDATA", "LOCALAPPDATA",
+            "CONTAINER_HOST", "XDG_RUNTIME_DIR", "SYSTEMROOT", "WINDIR",
+            "USERPROFILE", "APPDATA", "LOCALAPPDATA",
         )
         return {key: os.environ[key] for key in allowed if os.environ.get(key)}
 
@@ -98,17 +199,20 @@ class SandboxRunner:
             return
         for command in ([runtime, "kill", container_id], [runtime, "rm", "-f", container_id]):
             try:
-                subprocess.run(
-                    command, capture_output=True, timeout=3, env=env, check=False
-                )
+                subprocess.run(command, capture_output=True, timeout=3, env=env, check=False)
             except (OSError, subprocess.TimeoutExpired):
                 pass
 
     def run_python(
-        self, source_code: str, values: list[int], timeout_seconds: float | None = None
+        self,
+        source_code: str,
+        values: list[int],
+        timeout_seconds: float | None = None,
+        repeats: int = 1,
+        smoke_probe: bool = False,
     ) -> SandboxResult:
         started = time.perf_counter()
-        scope = "rootless_container_end_to_end_wall"
+        scope = "rootless_container_internal_algorithm_perf_counter_ns"
         if not isinstance(source_code, str):
             return SandboxResult(False, None, time.perf_counter() - started, scope, "Source must be text")
         try:
@@ -127,6 +231,12 @@ class SandboxRunner:
         ):
             return SandboxResult(False, None, time.perf_counter() - started, scope,
                                  "Execution timeout budget is invalid")
+        if type(repeats) is not int or not 1 <= repeats <= 10:
+            return SandboxResult(False, None, time.perf_counter() - started, scope,
+                                 "Repeats must be 1..10")
+        if type(smoke_probe) is not bool:
+            return SandboxResult(False, None, time.perf_counter() - started, scope,
+                                 "smoke_probe must be boolean")
         local_timeout = self.policy.timeout_seconds if timeout_seconds is None else min(
             self.policy.timeout_seconds, timeout_seconds
         )
@@ -150,6 +260,8 @@ class SandboxRunner:
             source_path.write_bytes(source_bytes)
             input_path = workspace / "input.json"
             input_path.write_text(json.dumps({"values": values}, separators=(",", ":")), encoding="utf-8")
+            runner_path = workspace / "runner.py"
+            runner_path.write_text(_RUNNER_SOURCE, encoding="utf-8")
             workspace.chmod(0o755)
             cid_directory = tempfile.TemporaryDirectory(prefix="metaforge-cid-")
             cid_file = Path(cid_directory.name) / "container.id"
@@ -164,14 +276,14 @@ class SandboxRunner:
                 f"--ulimit=fsize={self.policy.max_output_bytes}:{self.policy.max_output_bytes}",
                 f"--tmpfs=/tmp:rw,noexec,nosuid,nodev,size={self.policy.tmpfs_mb}m,mode=1777",
                 f"--mount={mount}", "--workdir=/workspace", "--entrypoint=python",
-                preparation.image, "-I", "-B", "/workspace/candidate.py", "/workspace/input.json",
+                preparation.image, "-I", "-B", "/workspace/runner.py",
+                "/workspace/candidate.py", "/workspace/input.json", str(repeats),
+                "1" if smoke_probe else "0",
             ]
             stdout = bytearray()
             stderr = bytearray()
             overflow = threading.Event()
             lock = threading.Lock()
-            process: subprocess.Popen | None = None
-
             try:
                 process = subprocess.Popen(
                     command,
@@ -242,8 +354,17 @@ class SandboxRunner:
                 parsed = json.loads(stdout.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError):
                 return SandboxResult(False, None, elapsed, scope, "Sandbox returned invalid JSON")
-            if not isinstance(parsed, list) or any(type(value) is not int for value in parsed):
+            if not isinstance(parsed, dict) or set(parsed) != {"output", "samples_ns"}:
                 return SandboxResult(False, None, elapsed, scope, "Sandbox output schema is invalid")
-            if parsed != sorted(values):
+            output = parsed["output"]
+            samples_ns = parsed["samples_ns"]
+            if not isinstance(output, list) or any(type(value) is not int for value in output):
+                return SandboxResult(False, None, elapsed, scope, "Sandbox output values are invalid")
+            if not isinstance(samples_ns, list) or len(samples_ns) != repeats or any(
+                type(value) is not int or value < 0 for value in samples_ns
+            ):
+                return SandboxResult(False, None, elapsed, scope, "Sandbox timing samples are invalid")
+            if output != sorted(values):
                 return SandboxResult(False, None, elapsed, scope, "Independent correctness check failed")
-            return SandboxResult(True, parsed, elapsed, scope)
+            samples = tuple(value / 1_000_000_000 for value in samples_ns)
+            return SandboxResult(True, output, elapsed, scope, None, samples)
