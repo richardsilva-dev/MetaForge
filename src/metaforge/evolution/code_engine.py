@@ -12,7 +12,7 @@ from typing import Any
 
 from metaforge.agents.code_safety import CodeReviewResult, StaticCodeReviewer
 from metaforge.agents.contracts import AgentResult, AgentTask
-from metaforge.sandbox.runner import SandboxPreparation, SandboxRunner
+from metaforge.sandbox.runner import SandboxPreparation, SandboxResult, SandboxRunner
 from metaforge.evolution.metadata import runtime_metadata
 
 
@@ -258,10 +258,19 @@ class CodeEvolutionEngine:
                         f"Sandbox runner failed: {type(exc).__name__}",
                     ))
                     continue
+                if not isinstance(result, SandboxResult):
+                    evaluations.append(CodeEvaluation(
+                        candidate, review, False, (), None, None,
+                        "Sandbox returned an invalid result type",
+                    ))
+                    continue
                 samples = result.algorithm_samples_seconds
                 samples_valid = (
                     len(samples) == self.repeats
-                    and all(math.isfinite(value) and value >= 0 for value in samples)
+                    and all(
+                        type(value) in (int, float) and math.isfinite(value) and value >= 0
+                        for value in samples
+                    )
                 )
                 if result.success and samples_valid:
                     median = statistics.median(samples)
