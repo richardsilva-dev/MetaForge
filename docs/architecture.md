@@ -16,7 +16,7 @@
 
 ## Agent architecture
 
-The registry is explicit and does not dynamically import arbitrary agent classes. The built-in specialists are deterministic reference implementations. The optional LangGraph adapter orchestrates registered roles without changing their permissions or bypassing deterministic gates. A future LLM adapter must use bounded structured inputs/outputs, validate all responses, apply time/token budgets, and treat all model output as untrusted.
+The registry is explicit and does not dynamically import arbitrary agent classes. The built-in specialists are deterministic reference implementations. The optional LangGraph adapter orchestrates registered roles without changing their permissions or bypassing deterministic gates. The optional OpenAI Agents SDK adapter can propose the initial population through strict Pydantic output, with no tools or handoffs, one turn, a per-call timeout, and trace payloads disabled. Proposals are accepted only if they exactly match the registered candidate search space; deterministic fallback fills missing proposals. A future LLM adapter must use bounded structured inputs/outputs, validate all responses, apply time/token budgets, and treat all model output as untrusted.
 
 ## Candidate identity and lineage
 
