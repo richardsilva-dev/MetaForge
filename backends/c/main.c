@@ -55,8 +55,9 @@ static void shell_sort(int64_t *values, size_t length) {
 }
 
 static uint64_t elapsed_ns(struct timespec start, struct timespec end) {
-    return (uint64_t)(end.tv_sec - start.tv_sec) * UINT64_C(1000000000)
-        + (uint64_t)(end.tv_nsec - start.tv_nsec);
+    int64_t seconds = (int64_t)end.tv_sec - (int64_t)start.tv_sec;
+    int64_t nanoseconds = (int64_t)end.tv_nsec - (int64_t)start.tv_nsec;
+    return (uint64_t)(seconds * INT64_C(1000000000) + nanoseconds);
 }
 
 int main(void) {
