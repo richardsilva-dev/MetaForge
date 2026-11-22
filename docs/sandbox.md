@@ -17,7 +17,7 @@ Set:
 - `METAFORGE_SANDBOX_RUNTIME=podman` (or `docker` only when its security options report rootless mode).
 - `METAFORGE_SANDBOX_IMAGE=repository/name@sha256:<64 lowercase hex characters>`.
 
-Run `python -m metaforge.cli sandbox-check` for preflight only. Then run `python -m metaforge.cli sandbox-smoke` to execute a fixed trusted probe that checks non-root UID, no network, read-only root filesystem/workspace, and absence of OPENAI_API_KEY inside the container. Neither command pulls images.
+Run `python -m metaforge.cli sandbox-check` for preflight only. Then run `python -m metaforge.cli sandbox-smoke` to execute a fixed trusted probe that checks non-root UID, no network, read-only root/workspace mounts, no-exec tmpfs, dropped capabilities, no-new-privileges, cgroup CPU/memory/PID limits, process/file limits, and absence of OPENAI_API_KEY inside the container. Neither command pulls images.
 
 ## Enforced container configuration
 
