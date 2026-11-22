@@ -26,6 +26,7 @@ jobs:
       - uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.language == 'c-cpp' && 'manual' || 'none' }}
       - if: matrix.language == 'c-cpp'
-        uses: github/codeql-action/autobuild@v3
+        run: mkdir -p .codeql && cc -std=c11 -g -O0 -Wall -Wextra -Werror -c backends/c/main.c -o .codeql/metaforge-c-backend.o
       - uses: github/codeql-action/analyze@v3
