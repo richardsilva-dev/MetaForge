@@ -1,39 +1,47 @@
 # Security model
 
-## Current controls
+## Execution paths
 
-- Candidate descriptors are declarative and validated against fixed strategy and pivot allow-lists.
-- The Candidate Safety Reviewer is a mandatory gate in the evaluation path.
-- The worker dispatches only to trusted package-owned implementations.
-- Input types and item counts are validated.
-- Worker execution has a timeout; the experiment scheduler also applies global wall-clock, evaluation-count, and concurrency budgets.
-- Correctness is checked against an independent oracle before performance ranking.
-- Agent results are treated as data and cannot authorize execution or bypass gates.
+MetaForge has two separate evaluation paths.
+
+### Descriptor EvolutionEngine
+
+- Candidates are declarative descriptors validated against fixed strategy and parameter allow-lists.
+- The mandatory Candidate Safety Reviewer gates every descriptor.
+- Workers dispatch only to package-owned trusted implementations.
+- The worker subprocess is fault containment, not a security boundary.
+- Input types/counts, timeouts, global wall-clock, evaluation-count, and concurrency budgets are enforced.
+- An independent correctness oracle gates performance ranking.
+
+### Source-level CodeEvolutionEngine
+
+- The optional OpenAI Agents SDK code designer has no tools or handoffs, returns bounded Pydantic output, and is limited to one turn per proposal.
+- Model output is untrusted. A static AST reviewer rejects disallowed imports, file access, stdout calls, dynamic execution, unsafe module-level statements, decorators, defaults, and annotations. This is defense in depth, not a security boundary.
+- The engine requires successful rootless runtime and local pinned-image preflight before it makes any model call.
+- Reviewed source is executed only in a rootless Podman/Docker container. It is never executed on the host.
+- Candidate source, input JSON, and a trusted timing wrapper are mounted read-only. The candidate receives values only through a pure `solve(values)` function.
+- The container has networking disabled, a non-root UID, read-only rootfs, dropped capabilities, no-new-privileges, CPU/memory/PID limits, swap disabled, bounded tmpfs/shared memory, file/descriptor/core limits, output limits, and a wall-clock timeout.
+- The trusted wrapper performs repeated calls with fresh input copies, checks result types and correctness, and measures algorithm time with `perf_counter_ns`. Container startup wall time is reported separately.
+- The host independently validates the wrapper's JSON output and timing sample schema.
+- The host API key and other host environment variables are not passed into the container. The model API key is used only by the host-side SDK client.
 
 ## Explicit limitations
 
-The worker process provides fault containment, not a security boundary. It inherits the host user's filesystem and network permissions. The output-size threshold is checked after subprocess output has been captured, so it is not a hard memory limit. Python tracemalloc measures traced Python allocations, not total process memory. The current implementation has no OS-enforced CPU, memory, process-count, or filesystem quota.
+- A container is not a proof against kernel/runtime vulnerabilities or container escapes. Use a dedicated isolated host or VM for high-risk research.
+- The static AST reviewer is not a sandbox and must never be treated as one.
+- The sandbox does not currently apply a custom syscall allow-list beyond the container runtime's default security profile.
+- Python tracemalloc does not measure total process memory. The source-level sandbox enforces a cgroup memory ceiling but does not yet report reliable per-candidate peak memory.
+- Source-level performance is measured only for Python candidates in the same pinned runtime/image. Do not compare those samples directly with C/Rust backend timings.
+- The target Windows/WSL host has not yet been validated; operators must run `sandbox-check` and `sandbox-smoke` there before invoking `code-evolve`.
 
-Do not execute hostile or untrusted source code through this runner. Do not provide credentials, home directories, SSH keys, cloud tokens, host sockets, or sensitive files to candidate processes.
+## Credential and data handling
 
-## Requirements before arbitrary code execution
+Do not commit API keys or place them in experiment datasets. Configure `OPENAI_API_KEY` only in the local host environment. Candidate containers receive no host environment variables, host sockets, SSH keys, cloud tokens, home directories, or arbitrary mounts. The code-evolution CLI uses synthetic integer datasets by default and archives generated source for audit/replay.
 
-A future sandbox must fail closed and be independently tested. At minimum:
+## Native backends
 
-- dedicated unprivileged identity with no ambient credentials;
-- isolated, minimal, preferably read-only filesystem;
-- network disabled by default;
-- OS-enforced CPU, memory, process-count, file-size, and wall-clock quotas;
-- bounded stdout/stderr capture at the OS or supervisor boundary;
-- syscall restrictions or equivalent platform-specific confinement;
-- process-tree termination and cleanup on timeout or cancellation;
-- no host Docker socket, package-manager credentials, or arbitrary mounts;
-- audit logs and reproducible sandbox image/version.
+The Rust and C backends compile only fixed source files shipped in this repository. They do not accept candidate-provided source paths or generated code. Generated C/Rust compilation is not enabled.
 
-The Rust and C backends compile only fixed source files shipped in this repository. They do not accept candidate-provided source paths or generated code. Until the sandbox controls above exist, agent-generated source remains data for review and is never compiled or executed by MetaForge.
+## V0.6 sandbox status
 
-## V0.6 container sandbox status
-
-The sandbox runner requires a rootless Podman or rootless Docker runtime and an image reference pinned by SHA-256 digest. It does not pull images. The preflight checks rootless mode and local image availability. The run policy disables networking, uses a non-root UID, read-only root filesystem, a read-only bind mount containing only candidate.py and input.json, dropped capabilities, no-new-privileges, CPU/memory/PID limits, a no-exec tmpfs, wall-clock timeout, and bounded output streams.
-
-The runner is integrated with the separate V0.7 CodeEvolutionEngine, which performs static AST review and then executes source only through the fail-closed rootless container runner. The descriptor-only EvolutionEngine remains unchanged. A live rootless Podman smoke passed in GitHub Actions with the pinned image; the target Windows/WSL host still requires its own preflight and smoke before operators run code evolution. Container escape review and dedicated-host/VM isolation remain required for high-risk use.
+The runner requires rootless Podman or rootless Docker and an image reference pinned by SHA-256 digest. It does not pull images. The preflight checks rootless mode and local image availability. The trusted `sandbox-smoke` probe passed in GitHub Actions with rootless Podman 5.7.0 and the pinned official Python 3.12 slim Bookworm image. The target operator machine still needs its own preflight and smoke run.
