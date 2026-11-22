@@ -16,7 +16,7 @@ class PythonBackend:
         self.runner = runner or CandidateRunner()
 
     def prepare(self) -> BackendPreparation:
-        return BackendPreparation(self.name, platform.python_version(), 0.0)
+        return BackendPreparation(self.name, platform.python_version(), 0.0, build_flags=("trusted Python worker",))
 
     def run_repeated(
         self,
