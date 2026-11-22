@@ -74,7 +74,6 @@ jobs:
       - run: python -m pip install -e ".[dev]"
       - run: podman info --format '{{.Host.Security.Rootless}}'
       - run: podman pull python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df
-      - run: printf '{"probe":true}' | podman run --rm --interactive --attach=stdin --pull=never --network=none --entrypoint=python python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df -c 'import sys; print(sys.stdin.read())'
       - run: python -m metaforge.cli sandbox-check
         env:
           METAFORGE_SANDBOX_RUNTIME: podman
