@@ -98,7 +98,7 @@ The command checks outputs against Python's sorted() oracle and writes a JSON re
 
 ## Sandbox status (V0.6/V0.7)
 
-A fail-closed Python container runner is implemented but is not connected to evolutionary candidate execution. It requires rootless Podman or rootless Docker and a locally available image pinned by sha256 digest. It disables networking, mounts only the candidate workspace read-only, uses a non-root UID, read-only root filesystem, dropped capabilities, no-new-privileges, CPU/memory/PID limits, a no-exec tmpfs, a wall-clock timeout, and bounded stdout/stderr capture. A trusted in-container wrapper measures repeated calls to a pure `solve(values)` function with `perf_counter_ns`; container startup wall time is kept separate from algorithm samples.
+A fail-closed Python container runner is integrated with the separate source-level CodeEvolutionEngine; the descriptor-only EvolutionEngine remains unchanged. It requires rootless Podman or rootless Docker and a locally available image pinned by sha256 digest. It disables networking, mounts only the candidate workspace read-only, uses a non-root UID, read-only root filesystem, dropped capabilities, no-new-privileges, CPU/memory/PID limits, a no-exec tmpfs, a wall-clock timeout, and bounded stdout/stderr capture. A trusted in-container wrapper measures repeated calls to a pure `solve(values)` function with `perf_counter_ns`; container startup wall time is kept separate from algorithm samples.
 
 Configure the runtime and immutable image reference, then verify the environment without executing any source:
 
@@ -119,9 +119,7 @@ CI covers Python 3.11, 3.12, and 3.13, executes a CLI smoke test, and separately
 
 ## Security boundary
 
-The worker process inherits the host user's operating-system permissions. Output size is checked after capture and therefore is not a hard memory limit. V0.2 does not provide OS-level CPU/memory isolation. Never use this runner for hostile or untrusted source code.
-
-Before enabling agent-generated code execution, implement and independently test a fail-closed OS/container sandbox: unprivileged identity, isolated minimal filesystem, disabled network, CPU/memory/process/file limits, bounded logs, syscall restrictions where available, and reliable teardown. Credentials, home directories, SSH keys, cloud tokens, and host sockets must never be exposed.
+The original descriptor worker inherits the host user's operating-system permissions and is not a security boundary. Source-level candidates are executed only through the rootless container runner after static review and preflight. The target Windows/WSL host must pass sandbox-check and sandbox-smoke before code-evolve is used. Credentials, home directories, SSH keys, cloud tokens, and host sockets must never be exposed to candidate containers.
 
 ## Roadmap
 
