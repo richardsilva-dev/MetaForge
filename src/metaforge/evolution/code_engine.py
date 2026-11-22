@@ -225,11 +225,19 @@ class CodeEvolutionEngine:
                         "error": "Proposal did not contain source_code",
                     })
                     continue
-                candidate = CodeCandidate.create(
-                    source_code, str(rationale), generation, proposal_index,
-                    parent.candidate.fingerprint if parent else None,
-                    str(model) if model is not None else None,
-                )
+                try:
+                    candidate = CodeCandidate.create(
+                        source_code, str(rationale), generation, proposal_index,
+                        parent.candidate.fingerprint if parent else None,
+                        str(model) if model is not None else None,
+                    )
+                except (UnicodeEncodeError, ValueError):
+                    proposals.append({
+                        "task_id": task.task_id,
+                        "success": False,
+                        "error": "Proposal source could not be fingerprinted as UTF-8",
+                    })
+                    continue
                 if candidate.fingerprint in seen_fingerprints:
                     proposals.append({
                         "task_id": task.task_id,
