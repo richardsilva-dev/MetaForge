@@ -45,6 +45,8 @@ class CodeReplayEngine:
             raise ValueError("Artifact does not contain a valid embedded replay dataset")
         if any(type(value) is not int or not -(2**63) <= value < 2**63 for value in dataset):
             raise ValueError("Replay dataset contains invalid integer values")
+        if original.get("dataset_size") != len(dataset):
+            raise ValueError("Embedded replay dataset size does not match the original artifact")
         dataset_sha256 = self._dataset_digest(dataset)
         if dataset_sha256 != original.get("dataset_sha256"):
             raise ValueError("Embedded replay dataset fingerprint does not match the original artifact")
