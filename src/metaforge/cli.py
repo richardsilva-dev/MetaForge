@@ -140,7 +140,7 @@ def main() -> int:
 import json, os, socket, sys
 if os.geteuid() == 0:
     raise SystemExit(10)
-for path in ("/metaforge-root-write-probe", "/workspace/candidate.py"):
+for path in ("/var/tmp/metaforge-root-write-probe", "/workspace/candidate.py"):
     try:
         with open(path, "w", encoding="utf-8") as handle:
             handle.write("must-not-write")
