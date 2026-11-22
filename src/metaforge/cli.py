@@ -105,13 +105,27 @@ def main() -> int:
         max_workers=config["max_workers"],
         global_timeout_seconds=config["global_timeout_seconds"],
     )
-    result = engine.run(dataset, config["generations_requested"])
+    stored_generations = original.get("generations", [])
+    has_schedule = (
+        len(stored_generations) == config["generations_requested"]
+        and all(isinstance(item, dict) and isinstance(item.get("candidate_population"), list)
+                for item in stored_generations)
+    )
+    candidate_schedule = (
+        [item["candidate_population"] for item in stored_generations] if has_schedule else None
+    )
+    result = engine.run(
+        dataset,
+        config["generations_requested"],
+        candidate_schedule=candidate_schedule,
+    )
     result["replay"] = replay_data
     result["replay_of"] = {
         "run_id": original.get("run_id"),
         "dataset_sha256": digest,
+        "candidate_schedule_replayed": has_schedule,
         "candidate_sequence_matches": _candidate_signature(original) == _candidate_signature(result),
-        "performance_comparison": "Not an exact replay; timings vary with runtime and machine conditions.",
+        "performance_comparison": "Timing values are new measurements and are not expected to match.",
     }
     _persist(result, args.output)
     print("Candidate sequence matches:", result["replay_of"]["candidate_sequence_matches"])
