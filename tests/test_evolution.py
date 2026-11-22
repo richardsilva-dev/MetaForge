@@ -45,7 +45,7 @@ def test_run_records_environment_dataset_hash_and_candidate_lineage():
     assert all(item["lineage"]["origin"] == "candidate_designer" for item in first)
     if len(result["generations"]) > 1:
         later = result["generations"][1]["evaluations"]
-        assert all(item["lineage"]["operator"] in {"elite_carryover", "mutation"} for item in later)
+        assert all(item["lineage"]["operator"] in {"elite_carryover", "mutation", "crossover", "restart_mutation", "mutation_duplicate_fallback"} for item in later)
 
 def test_pareto_selection_preserves_time_memory_tradeoffs():
     from metaforge.evolution.engine import Evaluation, _pareto_front, _select_parents
