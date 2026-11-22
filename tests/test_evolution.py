@@ -17,3 +17,32 @@ def test_invalid_parallelism_is_rejected():
     import pytest
     with pytest.raises(ValueError):
         EvolutionEngine(max_workers=0)
+
+def test_safety_reviewer_is_a_mandatory_execution_gate():
+    from metaforge.candidates.models import Candidate
+
+    class NeverRun:
+        def run_repeated(self, *args, **kwargs):
+            raise AssertionError("candidate execution must not occur after rejection")
+
+    engine = EvolutionEngine(runner=NeverRun(), repeats=1)
+    engine.agents.approve = lambda candidate, task_id: False
+    result = engine.evaluate(Candidate("builtin"), [2, 1])
+    assert result.valid is False
+    assert result.error == "Candidate rejected by safety reviewer"
+
+
+def test_run_records_environment_dataset_hash_and_candidate_lineage():
+    import hashlib
+    import json
+
+    dataset = [4, 1, 3, 2]
+    result = EvolutionEngine(seed=17, repeats=1, population_size=6).run(dataset, generations=2)
+    expected = hashlib.sha256(json.dumps(dataset, separators=(",", ":")).encode()).hexdigest()
+    assert result["dataset_sha256"] == expected
+    assert result["environment"]["python_version"]
+    first = result["generations"][0]["evaluations"]
+    assert all(item["lineage"]["origin"] == "candidate_designer" for item in first)
+    if len(result["generations"]) > 1:
+        later = result["generations"][1]["evaluations"]
+        assert all(item["lineage"]["operator"] in {"elite_carryover", "mutation"} for item in later)
