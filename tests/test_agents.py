@@ -21,3 +21,13 @@ def test_benchmark_analyst_only_ranks_valid_results():
         {"valid":False,"median_seconds":0.01,"fingerprint":"b"}]}))
     assert result.output["valid_count"]==1
     assert result.output["ranked_fingerprints"]==["a"]
+
+def test_langgraph_adapter_when_dependency_is_installed():
+    import pytest
+    pytest.importorskip("langgraph")
+    from metaforge.agents.langgraph_adapter import execute_with_langgraph
+    registry=AgentRegistry()
+    registry.register("reviewer",CandidateSafetyReviewer())
+    task=AgentTask("langgraph-review","review",{"candidate":{"strategy":"merge","pivot":"middle"}})
+    results=execute_with_langgraph(registry,[("reviewer",task)])
+    assert len(results)==1 and results[0].output["approved"] is True
