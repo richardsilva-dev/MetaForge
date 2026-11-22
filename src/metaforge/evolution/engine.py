@@ -447,7 +447,7 @@ class EvolutionEngine:
                 "max_workers": self.max_workers,
                 "global_timeout_seconds": self.global_timeout_seconds,
                 "candidate_space_version": "0.3",
-                "candidate_designer_mode": "llm" if self.agents.external_designer_enabled else "deterministic",
+                "candidate_designer_mode": "archived_schedule" if candidate_schedule is not None else ("llm" if self.agents.external_designer_enabled else "deterministic"),
                 "selection": "pareto_crowding_with_strategy_diversity",
             },
             "generations": history,
