@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import random
 from pathlib import Path
 from typing import Any
@@ -49,6 +50,9 @@ def main() -> int:
     run.add_argument("--max-evaluations", type=int, default=64)
     run.add_argument("--max-workers", type=int, default=2)
     run.add_argument("--global-timeout", type=float, default=120.0)
+    run.add_argument("--llm-proposals", action="store_true", help="use an optional OpenAI Agents SDK candidate designer")
+    run.add_argument("--llm-model", default=os.environ.get("METAFORGE_AGENT_MODEL"))
+    run.add_argument("--llm-timeout", type=float, default=25.0)
     run.add_argument("--output", type=Path, default=Path(".artifacts/latest.json"))
 
     replay = sub.add_parser("replay", help="re-run an archived experiment using its stored dataset")
@@ -62,6 +66,17 @@ def main() -> int:
             parser.error("--size must be 1..100000")
         if not 1 <= args.generations <= 20:
             parser.error("--generations must be 1..20")
+        candidate_designer = None
+        if args.llm_proposals:
+            if not os.environ.get("OPENAI_API_KEY"):
+                parser.error("--llm-proposals requires OPENAI_API_KEY in the environment")
+            if not args.llm_model:
+                parser.error("set --llm-model or METAFORGE_AGENT_MODEL when using --llm-proposals")
+            try:
+                from metaforge.agents.openai_adapter import OpenAICandidateDesigner
+                candidate_designer = OpenAICandidateDesigner(args.llm_model, args.llm_timeout)
+            except (ImportError, ValueError) as exc:
+                parser.error(str(exc))
         dataset = _dataset(args.seed, args.size)
         engine = EvolutionEngine(
             seed=args.seed,
@@ -70,6 +85,7 @@ def main() -> int:
             max_evaluations=args.max_evaluations,
             max_workers=args.max_workers,
             global_timeout_seconds=args.global_timeout,
+            candidate_designer=candidate_designer,
         )
         result = engine.run(dataset, args.generations)
         result["replay"] = {
