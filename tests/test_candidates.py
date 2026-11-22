@@ -3,7 +3,8 @@ from metaforge.candidates.algorithms import run_candidate
 from metaforge.candidates.models import Candidate
 
 @pytest.mark.parametrize("candidate",[Candidate("builtin"),Candidate("insertion"),Candidate("merge"),
-    Candidate("quicksort","first"),Candidate("quicksort","last"),Candidate("quicksort","median3"),Candidate("heapsort"),Candidate("shellsort"),\n    Candidate("hybrid","middle",8),Candidate("hybrid","median3",32)])
+    Candidate("quicksort","first"),Candidate("quicksort","last"),Candidate("quicksort","median3"),Candidate("heapsort"),Candidate("shellsort"),
+    Candidate("hybrid","middle",8),Candidate("hybrid","median3",32)])
 def test_sorting(candidate):
     for values in ([],[1],[3,2,1],[4,4,4],[-5,0,5,-5],list(range(50,-1,-1))):
         assert run_candidate(candidate,values)==sorted(values)
