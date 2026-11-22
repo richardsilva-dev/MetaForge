@@ -74,7 +74,6 @@ class OpenAICandidateDesigner:
                 model=self.model,
                 output_type=CandidateProposal,
                 model_settings=ModelSettings(
-                    temperature=0,
                     timeout=self.timeout_seconds,
                     tool_choice="none",
                 ),
