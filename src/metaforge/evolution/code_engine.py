@@ -311,7 +311,7 @@ class CodeEvolutionEngine:
             })
             current_parents = [item for item in evaluations if item.success]
             parent_pool = current_parents[:2] or sorted(
-                all_valid, key=lambda item: item.median_algorithm_seconds or float("inf")
+                all_valid, key=lambda item: item.median_algorithm_seconds if item.median_algorithm_seconds is not None else float("inf")
             )[:2]
             if stop_reason in {"global_timeout", "agent_call_budget_exhausted"}:
                 break
