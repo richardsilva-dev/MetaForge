@@ -80,3 +80,13 @@ def test_candidate_generator_supports_crossover_and_mutation():
     assert child.fingerprint != ""
     mutated = generator.mutate(first)
     assert mutated != first
+
+def test_evaluation_preserves_raw_samples_and_robust_spread():
+    result = EvolutionEngine(seed=29, repeats=3, population_size=4, max_evaluations=4).run(
+        [8, 2, 5, 1, 3], generations=1
+    )
+    valid = [item for item in result["generations"][0]["evaluations"] if item["valid"]]
+    assert valid
+    assert all(len(item["runtime_samples_seconds"]) == 3 for item in valid)
+    assert all(len(item["peak_samples_bytes"]) == 3 for item in valid)
+    assert all(item["runtime_mad_seconds"] is not None for item in valid)
