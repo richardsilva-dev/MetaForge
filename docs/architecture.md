@@ -29,3 +29,7 @@ Each run records a unique ID, UTC timestamps, seed, SHA-256 of the canonical dat
 ## Execution boundary
 
 The worker subprocess is fault containment only. It inherits host filesystem and network permissions. Candidate descriptors select package-owned trusted functions; they are not source code. Arbitrary agent-generated code remains disabled until a separately reviewed OS-level sandbox is available.
+
+## Execution backends
+
+The backend protocol separates preparation from repeated algorithm execution. Python delegates to the existing isolated worker. Rust and C compile fixed, repository-owned source files; their build flags, source SHA-256, binary SHA-256, compiler version, and compilation duration are recorded separately. Native backends currently expose internal algorithm elapsed time but no comparable peak-memory metric. The CLI backend-check command verifies each backend against the same independent Python sorting oracle and records dataset/environment provenance. It intentionally does not rank native and Python runtimes as if their measurement scopes were identical.
