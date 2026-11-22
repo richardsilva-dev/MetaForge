@@ -38,7 +38,7 @@ class FakeDesigner:
         self.sources = list(sources)
         self.tasks = []
 
-    def run(self, task):
+    def run(self, task, timeout_seconds=None):
         self.tasks.append(task)
         source = self.sources[len(self.tasks) - 1]
         return AgentResult(
