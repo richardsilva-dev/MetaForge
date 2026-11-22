@@ -2,6 +2,7 @@ from __future__ import annotations
 import random, statistics
 from dataclasses import dataclass
 from typing import Any
+from metaforge.agents.orchestrator import AgentOrchestrator
 from metaforge.candidates.generator import CandidateGenerator
 from metaforge.candidates.models import Candidate
 from metaforge.execution.runner import CandidateRunner
@@ -25,7 +26,8 @@ class EvolutionEngine:
     def __init__(self,runner:CandidateRunner|None=None,seed:int=7,repeats:int=3,population_size:int=8):
         if repeats<1 or population_size<2: raise ValueError("Invalid evolution parameters")
         self.runner=runner or CandidateRunner(); self.generator=CandidateGenerator(seed)
-        self.random=random.Random(seed); self.repeats=repeats; self.population_size=population_size
+        self.agents=AgentOrchestrator(seed); self.random=random.Random(seed)
+        self.repeats=repeats; self.population_size=population_size
 
     def evaluate(self,candidate:Candidate,dataset:list[int])->Evaluation:
         runs=self.runner.run_repeated(candidate,dataset,self.repeats)
@@ -38,13 +40,22 @@ class EvolutionEngine:
 
     def run(self,dataset:list[int],generations:int=3)->dict[str,Any]:
         if generations<1 or generations>20: raise ValueError("Generations must be 1..20")
-        population=self.generator.initial_population(self.population_size); history=[]
+        population=self.agents.design_population(self.population_size,"generation-0-design")
+        history=[]
         for generation in range(generations):
             unique={c.fingerprint:c for c in population}
-            evaluations=[self.evaluate(c,dataset) for c in unique.values()]
+            evaluations=[]
+            for candidate in unique.values():
+                if not self.agents.approve(candidate,f"g{generation}-{candidate.fingerprint[:8]}"):
+                    evaluations.append(Evaluation(candidate,False,None,None,"Rejected by candidate safety policy"))
+                else:
+                    evaluations.append(self.evaluate(candidate,dataset))
             valid=sorted((e for e in evaluations if e.valid),key=lambda e:e.score)
-            history.append({"generation":generation,"evaluations":[e.to_dict() for e in evaluations],
-                            "valid_count":len(valid),"population_diversity":len(unique)})
+            records=[e.to_dict() for e in evaluations]
+            analysis=self.agents.analyze(records,f"generation-{generation}-analysis")
+            history.append({"generation":generation,"evaluations":records,
+                            "valid_count":len(valid),"population_diversity":len(unique),
+                            "agent_analysis":analysis})
             if generation<generations-1:
                 parents=valid[:max(1,min(3,len(valid)))]
                 if not parents: population=self.generator.initial_population(self.population_size)
