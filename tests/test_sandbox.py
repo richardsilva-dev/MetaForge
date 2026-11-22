@@ -44,7 +44,10 @@ elif args and args[0] == "run":
         sys.stdout.write("x" * 4096)
         sys.stdout.flush()
     else:
-        payload = json.load(sys.stdin)
+        mount_arg = next(item for item in args if item.startswith("--mount="))
+        mount_spec = mount_arg.split("=", 1)[1]
+        source_path = mount_spec.split("source=", 1)[1].split(",target=", 1)[0]
+        payload = json.loads((Path(source_path) / "input.json").read_text(encoding="utf-8"))
         print(json.dumps(sorted(payload["values"])))
 else:
     raise SystemExit(2)
@@ -71,7 +74,7 @@ def test_rootless_sandbox_runs_with_required_isolation_flags(tmp_path):
     assert result.output == [1, 2, 3, 5]
     args = Path(str(runtime) + ".args").read_text(encoding="utf-8")
     for required in (
-        "--interactive", "--attach=stdin", "--network=none", "--read-only", "--cap-drop=ALL",
+        "--network=none", "--read-only", "--cap-drop=ALL",
         "--security-opt=no-new-privileges", "--user=65534:65534",
         "--pids-limit=64", "--memory=256m", "--memory-swap=256m", "--shm-size=16m", "--ulimit=core=0:0",
         "--pull=never", "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777",
