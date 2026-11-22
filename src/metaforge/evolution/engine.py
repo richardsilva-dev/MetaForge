@@ -26,6 +26,9 @@ class Evaluation:
     median_peak_bytes: int | None
     error: str | None = None
     lineage: dict[str, Any] | None = None
+    runtime_samples_seconds: list[float] | None = None
+    peak_samples_bytes: list[int] | None = None
+    runtime_mad_seconds: float | None = None
 
     @property
     def score(self) -> float:
@@ -40,6 +43,9 @@ class Evaluation:
             "median_peak_bytes": self.median_peak_bytes,
             "error": self.error,
             "lineage": self.lineage or {},
+            "runtime_samples_seconds": self.runtime_samples_seconds or [],
+            "peak_samples_bytes": self.peak_samples_bytes or [],
+            "runtime_mad_seconds": self.runtime_mad_seconds,
         }
 
 
@@ -181,8 +187,11 @@ class EvolutionEngine:
                 return Evaluation(candidate, False, None, None, "Worker omitted required metrics", lineage)
             times.append(run.elapsed_seconds)
             peaks.append(run.peak_bytes)
+        median_time = statistics.median(times)
+        median_absolute_deviation = statistics.median(abs(value - median_time) for value in times)
         return Evaluation(
-            candidate, True, statistics.median(times), int(statistics.median(peaks)), None, lineage
+            candidate, True, median_time, int(statistics.median(peaks)), None, lineage,
+            times, peaks, median_absolute_deviation,
         )
 
     def run(self, dataset: list[int], generations: int = 3) -> dict[str, Any]:
