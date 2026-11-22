@@ -14,6 +14,7 @@ dependencies = []
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 orchestration = ["langgraph>=1.0"]
+llm = ["openai-agents>=0.21.0,<1.0"]
 
 [project.scripts]
 metaforge = "metaforge.cli:main"
