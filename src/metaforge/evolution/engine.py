@@ -194,30 +194,59 @@ class EvolutionEngine:
             times, peaks, median_absolute_deviation,
         )
 
-    def run(self, dataset: list[int], generations: int = 3) -> dict[str, Any]:
+    def run(
+        self,
+        dataset: list[int],
+        generations: int = 3,
+        candidate_schedule: list[list[dict[str, Any]]] | None = None,
+    ) -> dict[str, Any]:
         if not isinstance(dataset, list) or len(dataset) > 100_000:
             raise ValueError("dataset must be a list containing at most 100000 integers")
         if any(type(value) is not int for value in dataset):
             raise ValueError("dataset must contain only integers (booleans are not accepted)")
         if generations < 1 or generations > 20:
             raise ValueError("Generations must be 1..20")
+        if candidate_schedule is not None and (
+            not isinstance(candidate_schedule, list) or len(candidate_schedule) != generations
+        ):
+            raise ValueError("candidate_schedule must contain exactly one population per generation")
+
+        def load_scheduled_population(index: int) -> tuple[list[Candidate], dict[str, dict[str, Any]]]:
+            entries = candidate_schedule[index] if candidate_schedule is not None else None
+            if not isinstance(entries, list) or not 2 <= len(entries) <= 32:
+                raise ValueError("Each scheduled population must contain 2..32 candidate records")
+            scheduled_candidates: list[Candidate] = []
+            scheduled_lineage: dict[str, dict[str, Any]] = {}
+            for entry in entries:
+                if not isinstance(entry, dict) or "candidate" not in entry:
+                    raise ValueError("Invalid candidate schedule entry")
+                candidate = Candidate.from_dict(entry["candidate"])
+                lineage = entry.get("lineage", {})
+                if not isinstance(lineage, dict):
+                    raise ValueError("Candidate lineage must be an object")
+                scheduled_candidates.append(candidate)
+                scheduled_lineage[candidate.fingerprint] = lineage
+            return scheduled_candidates, scheduled_lineage
 
         dataset_bytes = json.dumps(dataset, separators=(",", ":")).encode("utf-8")
         dataset_sha256 = hashlib.sha256(dataset_bytes).hexdigest()
         run_id = uuid4().hex
         started_at = datetime.now(timezone.utc).isoformat()
         deadline = time.monotonic() + self.global_timeout_seconds
-        population = self.agents.design_population(self.population_size, "generation-0-design")
-        lineage_by_fingerprint = {
-            candidate.fingerprint: {
-                "generation_created": 0,
-                "operator": "initial_population",
-                "parent_fingerprint": None,
-                "parent_fingerprints": [],
-                "origin": "candidate_designer",
+        if candidate_schedule is None:
+            population = self.agents.design_population(self.population_size, "generation-0-design")
+            lineage_by_fingerprint = {
+                candidate.fingerprint: {
+                    "generation_created": 0,
+                    "operator": "initial_population",
+                    "parent_fingerprint": None,
+                    "parent_fingerprints": [],
+                    "origin": "candidate_designer",
+                }
+                for candidate in population
             }
-            for candidate in population
-        }
+        else:
+            population, lineage_by_fingerprint = load_scheduled_population(0)
         history: list[dict[str, Any]] = []
         evaluations_used = 0
         stop_reason = "generation_limit"
@@ -273,12 +302,25 @@ class EvolutionEngine:
                 if stop_reason == "global_timeout":
                     break
 
+            evaluated_by_fingerprint = {item.candidate.fingerprint: item for item in evaluations}
+            evaluations = [
+                evaluated_by_fingerprint[candidate.fingerprint]
+                for candidate in candidates
+                if candidate.fingerprint in evaluated_by_fingerprint
+            ]
             valid = [item for item in evaluations if item.valid]
             records = [item.to_dict() for item in evaluations]
             analysis = self.agents.analyze(records, f"generation-{generation}-analysis")
             front = _pareto_front(valid)
             history.append({
                 "generation": generation,
+                "candidate_population": [
+                    {
+                        "candidate": candidate.to_dict(),
+                        "lineage": lineage_by_fingerprint.get(candidate.fingerprint, {}),
+                    }
+                    for candidate in candidates
+                ],
                 "evaluations": records,
                 "valid_count": len(valid),
                 "population_diversity": len(unique),
@@ -293,6 +335,9 @@ class EvolutionEngine:
                 stop_reason = "evaluation_budget_exhausted"
                 break
             if generation < generations - 1:
+                if candidate_schedule is not None:
+                    population, lineage_by_fingerprint = load_scheduled_population(generation + 1)
+                    continue
                 parents = _select_parents(valid, limit=min(4, max(1, len(valid))))
                 next_population: list[Candidate] = []
                 next_lineage: dict[str, dict[str, Any]] = {}
@@ -378,7 +423,7 @@ class EvolutionEngine:
         pareto_records = [item.to_dict() for item in _pareto_front(all_evaluations)]
         finished_at = datetime.now(timezone.utc).isoformat()
         return {
-            "schema_version": "1.2",
+            "schema_version": "1.3",
             "run_id": run_id,
             "started_at": started_at,
             "finished_at": finished_at,
