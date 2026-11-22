@@ -32,7 +32,10 @@ elif args and args[0] in ("kill", "rm"):
     raise SystemExit(0)
 elif args and args[0] == "run":
     cid_arg = next(item for item in args if item.startswith("--cidfile="))
-    Path(cid_arg.split("=", 1)[1]).write_text("a" * 64, encoding="utf-8")
+    cid_path = Path(cid_arg.split("=", 1)[1])
+    if cid_path.exists():
+        raise SystemExit(4)
+    cid_path.write_text("a" * 64, encoding="utf-8")
     Path(__file__ + ".args").write_text("\\n".join(args), encoding="utf-8")
     if mode == "timeout":
         time.sleep(5)
