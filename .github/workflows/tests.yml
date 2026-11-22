@@ -77,7 +77,7 @@ jobs:
           python-version: "3.12"
       - run: sudo apt-get update && sudo apt-get install -y podman
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e ".[dev]"
+      - run: python -m pip install -e ".[dev,llm]"
       - run: podman info --format '{{.Host.Security.Rootless}}'
       - run: podman pull python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df
       - run: python -m metaforge.cli sandbox-check
@@ -85,6 +85,10 @@ jobs:
           METAFORGE_SANDBOX_RUNTIME: podman
           METAFORGE_SANDBOX_IMAGE: python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df
       - run: python -m metaforge.cli sandbox-smoke
+        env:
+          METAFORGE_SANDBOX_RUNTIME: podman
+          METAFORGE_SANDBOX_IMAGE: python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df
+      - run: python -m pytest tests/test_code_evolution_live.py
         env:
           METAFORGE_SANDBOX_RUNTIME: podman
           METAFORGE_SANDBOX_IMAGE: python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df
