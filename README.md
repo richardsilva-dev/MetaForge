@@ -115,9 +115,9 @@ Before enabling agent-generated code execution, implement and independently test
 - **V0.3 (released):** expanded algorithm families, crossover, mutation, Pareto selection, diversity preservation, raw measurement samples, and exact candidate-schedule replay.
 
 - **V0.4 (released):** optional OpenAI Agents SDK candidate proposals through strict structured outputs, no tools, one-turn/time limits, allow-list validation, and deterministic fallback.
-- **V0.5 (in progress):** versioned backend interfaces and trusted Rust/C implementations with compilation and runtime measurements kept separate.
+- **V0.5 (released):** versioned backend interfaces, trusted Rust/C implementations, compiler/source/binary provenance, and cross-backend correctness CI.
 
-- **V0.6:** hardened sandbox, fuzzing, and sanitizers.
+- **V0.6 (in progress):** fail-closed container sandbox design, fuzzing, and sanitizers before any generated-code execution.
 - **V1.0:** extensible multi-problem research laboratory.
 
 Benchmark values are exploratory. Do not claim general performance improvements without controlled, repeated comparisons across representative datasets and hardware.
