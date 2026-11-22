@@ -178,7 +178,7 @@ def main() -> int:
             )
             dataset = _dataset(args.seed, args.size)
             result = engine.run(dataset)
-        except (ImportError, ValueError, RuntimeError) as exc:
+        except Exception as exc:
             parser.error(f"code-evolve stopped safely: {type(exc).__name__}: {exc}")
         result["replay"] = {
             "dataset": dataset,
