@@ -289,7 +289,7 @@ class CodeEvolutionEngine:
                         for value in samples
                     )
                 )
-                if result.success and samples_valid:
+                if result.success and result.output == sorted(dataset) and samples_valid:
                     median = statistics.median(samples)
                     evaluation = CodeEvaluation(
                         candidate, review, True, samples,
