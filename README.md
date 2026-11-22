@@ -96,6 +96,19 @@ Install a Rust toolchain (rustc and cargo) and a C compiler (cc, clang, or gcc),
 
 The command checks outputs against Python's sorted() oracle and writes a JSON report. Python peak memory uses tracemalloc; native backends currently do not report comparable peak-memory measurements. Runtime measurement scopes differ, so the report deliberately does not claim cross-language performance rankings. Only trusted source files already in this repository are compiled; generated source is never accepted.
 
+## Sandbox status (V0.6)
+
+A fail-closed Python container runner is implemented but is not connected to evolutionary candidate execution. It requires rootless Podman or rootless Docker and a locally available image pinned by sha256 digest. It disables networking, mounts only the candidate workspace read-only, uses a non-root UID, read-only root filesystem, dropped capabilities, no-new-privileges, CPU/memory/PID limits, a no-exec tmpfs, a wall-clock timeout, and bounded stdout/stderr capture.
+
+Configure the runtime and immutable image reference, then verify the environment without executing any source:
+
+    # Example environment variable names; use an image@sha256:digest reference.
+    $env:METAFORGE_SANDBOX_RUNTIME = "podman"
+    $env:METAFORGE_SANDBOX_IMAGE = "registry.example/python@sha256:<64-hex-digest>"
+    python -m metaforge.cli sandbox-check
+
+The sandbox has only fake-runtime policy/timeout/output tests in CI so far; it has not been validated against a live container engine on the target host. It is therefore not enabled for agent-generated code. Container isolation also does not eliminate kernel/runtime vulnerabilities; use a dedicated isolated host or VM for high-risk experiments.
+
 ## Tests
 
     python -m pytest
@@ -117,7 +130,7 @@ Before enabling agent-generated code execution, implement and independently test
 - **V0.4 (released):** optional OpenAI Agents SDK candidate proposals through strict structured outputs, no tools, one-turn/time limits, allow-list validation, and deterministic fallback.
 - **V0.5 (released):** versioned backend interfaces, trusted Rust/C implementations, compiler/source/binary provenance, and cross-backend correctness CI.
 
-- **V0.6 (in progress):** fail-closed container sandbox design, fuzzing, and sanitizers before any generated-code execution.
+- **V0.6 (in progress):** live rootless-container validation, sandbox integration tests, fuzzing, and sanitizers before any generated-code execution.
 - **V1.0:** extensible multi-problem research laboratory.
 
 Benchmark values are exploratory. Do not claim general performance improvements without controlled, repeated comparisons across representative datasets and hardware.
