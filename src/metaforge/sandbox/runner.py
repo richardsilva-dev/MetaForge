@@ -234,7 +234,11 @@ class SandboxRunner:
             if overflow.is_set():
                 return SandboxResult(False, None, elapsed, scope, "Sandbox output limit exceeded")
             if process.returncode != 0:
-                return SandboxResult(False, None, elapsed, scope, "Sandbox process returned non-zero status")
+                detail = stderr.decode("utf-8", errors="replace").strip()[:500]
+                error = f"Sandbox process returned non-zero status ({process.returncode})"
+                if detail:
+                    error += f": {detail}"
+                return SandboxResult(False, None, elapsed, scope, error)
             try:
                 parsed = json.loads(stdout.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError):
