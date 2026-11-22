@@ -39,16 +39,20 @@ class StaticCodeReviewer:
         self.max_source_bytes = max_source_bytes
 
     @staticmethod
-    def _is_sys_argv_one(node: ast.AST) -> bool:
-        return (
-            isinstance(node, ast.Subscript)
-            and isinstance(node.value, ast.Attribute)
-            and isinstance(node.value.value, ast.Name)
-            and node.value.value.id == "sys"
-            and node.value.attr == "argv"
-            and isinstance(node.slice, ast.Constant)
-            and node.slice.value == 1
-        )
+    def _is_literal(node: ast.AST) -> bool:
+        if isinstance(node, ast.Constant):
+            return True
+        if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+            return all(StaticCodeReviewer._is_literal(item) for item in node.elts)
+        if isinstance(node, ast.Dict):
+            return all(
+                key is not None and StaticCodeReviewer._is_literal(key)
+                and StaticCodeReviewer._is_literal(value)
+                for key, value in zip(node.keys, node.values)
+            )
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub, ast.Not)):
+            return StaticCodeReviewer._is_literal(node.operand)
+        return False
 
     def review(self, source_code: str) -> CodeReviewResult:
         findings: list[str] = []
@@ -70,16 +74,22 @@ class StaticCodeReviewer:
         for statement in tree.body:
             if isinstance(statement, (ast.Import, ast.ImportFrom, ast.FunctionDef)):
                 if isinstance(statement, ast.FunctionDef) and (
-                    statement.decorator_list or statement.args.defaults or statement.args.kw_defaults
+                    statement.decorator_list or statement.args.defaults
+                    or any(value is not None for value in statement.args.kw_defaults)
                     or statement.returns is not None
+                    or any(arg.annotation is not None for arg in (
+                        statement.args.posonlyargs + statement.args.args + statement.args.kwonlyargs
+                    ))
+                    or (statement.args.vararg and statement.args.vararg.annotation is not None)
+                    or (statement.args.kwarg and statement.args.kwarg.annotation is not None)
                 ):
                     findings.append("Top-level functions cannot use decorators, defaults, or annotations")
             elif isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Constant) and isinstance(statement.value.value, str):
                 if statement is not tree.body[0]:
                     findings.append("Only the module docstring is allowed as a top-level expression")
             elif isinstance(statement, ast.Assign):
-                if not all(isinstance(target, ast.Name) for target in statement.targets) or not isinstance(
-                    statement.value, (ast.Constant, ast.Tuple, ast.List, ast.Set, ast.Dict)
+                if not all(isinstance(target, ast.Name) for target in statement.targets) or not self._is_literal(
+                    statement.value
                 ):
                     findings.append("Top-level assignments must use simple literal constants")
             else:
