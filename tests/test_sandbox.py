@@ -21,6 +21,8 @@ from pathlib import Path
 import sys
 import time
 
+if "OPENAI_API_KEY" in os.environ:
+    raise SystemExit(9)
 args = sys.argv[1:]
 mode = {mode!r}
 if args == ["--version"]:
