@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import statistics
 import time
 from dataclasses import dataclass
 from typing import Any
 
 from metaforge.agents.code_safety import CodeReviewResult, StaticCodeReviewer
-from metaforge.agents.contracts import AgentTask
+from metaforge.agents.contracts import AgentResult, AgentTask
 from metaforge.sandbox.runner import SandboxPreparation, SandboxRunner
 
 
@@ -129,6 +130,8 @@ class CodeEvolutionEngine:
 
         # Fail closed before spending model tokens or accepting source proposals.
         preparation: SandboxPreparation = self.sandbox_runner.prepare()
+        if not preparation.rootless:
+            raise RuntimeError("Code evolution requires a rootless sandbox runtime")
         deadline = time.monotonic() + self.global_timeout_seconds
         calls_used = 0
         stop_reason = "generation_limit"
@@ -185,6 +188,13 @@ class CodeEvolutionEngine:
                         "error": f"Designer failed: {type(exc).__name__}",
                     })
                     continue
+                if not isinstance(agent_result, AgentResult):
+                    proposals.append({
+                        "task_id": task.task_id,
+                        "success": False,
+                        "error": "Designer returned an invalid result type",
+                    })
+                    continue
                 if not agent_result.success or not isinstance(agent_result.output, dict):
                     proposals.append({
                         "task_id": task.task_id,
@@ -232,23 +242,36 @@ class CodeEvolutionEngine:
                 if remaining <= 0:
                     stop_reason = "global_timeout"
                     break
-                result = self.sandbox_runner.run_python(
-                    source_code,
-                    dataset,
-                    timeout_seconds=remaining,
-                    repeats=self.repeats,
+                try:
+                    result = self.sandbox_runner.run_python(
+                        source_code,
+                        dataset,
+                        timeout_seconds=remaining,
+                        repeats=self.repeats,
+                    )
+                except Exception as exc:
+                    evaluations.append(CodeEvaluation(
+                        candidate, review, False, (), None, None,
+                        f"Sandbox runner failed: {type(exc).__name__}",
+                    ))
+                    continue
+                samples = result.algorithm_samples_seconds
+                samples_valid = (
+                    len(samples) == self.repeats
+                    and all(math.isfinite(value) and value >= 0 for value in samples)
                 )
-                if result.success:
-                    median = statistics.median(result.algorithm_samples_seconds)
+                if result.success and samples_valid:
+                    median = statistics.median(samples)
                     evaluation = CodeEvaluation(
-                        candidate, review, True, result.algorithm_samples_seconds,
+                        candidate, review, True, samples,
                         median, result.wall_seconds, None,
                     )
                     evaluations.append(evaluation)
                     all_valid.append(evaluation)
                 else:
+                    error = result.error or "Sandbox returned invalid timing samples"
                     evaluations.append(CodeEvaluation(
-                        candidate, review, False, (), None, result.wall_seconds, result.error,
+                        candidate, review, False, (), None, result.wall_seconds, error,
                     ))
                 if time.monotonic() >= deadline:
                     stop_reason = "global_timeout"
@@ -265,7 +288,10 @@ class CodeEvolutionEngine:
                 "evaluations": [item.to_dict() for item in evaluations],
                 "valid_count": sum(item.success for item in evaluations),
             })
-            parent_pool = [item for item in evaluations if item.success][:2]
+            current_parents = [item for item in evaluations if item.success]
+            parent_pool = current_parents[:2] or sorted(
+                all_valid, key=lambda item: item.median_algorithm_seconds or float("inf")
+            )[:2]
             if stop_reason in {"global_timeout", "agent_call_budget_exhausted"}:
                 break
 
