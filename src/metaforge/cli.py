@@ -192,6 +192,13 @@ with open("/sys/fs/cgroup/cpu.max", encoding="utf-8") as handle:
     quota, period = handle.read().split()
 if quota == "max" or int(quota) <= 0 or int(period) <= 0 or int(quota) / int(period) > 1.01:
     fail(20)
+with open("/sys/fs/cgroup/memory.swap.max", encoding="utf-8") as handle:
+    if handle.read().strip() != "0":
+        fail(23)
+if os.statvfs("/dev/shm").f_frsize * os.statvfs("/dev/shm").f_blocks > 16 * 1024 * 1024:
+    fail(24)
+if os.statvfs("/tmp").f_frsize * os.statvfs("/tmp").f_blocks > 16 * 1024 * 1024:
+    fail(25)
 
 if "OPENAI_API_KEY" in os.environ:
     fail(21)
