@@ -218,11 +218,11 @@ class CodeEvolutionEngine:
                 source_code = agent_result.output.get("source_code")
                 rationale = agent_result.output.get("rationale", "")
                 model = agent_result.output.get("model")
-                if not isinstance(source_code, str) or not source_code:
+                if not isinstance(source_code, str) or not source_code or len(source_code) > 50_000:
                     proposals.append({
                         "task_id": task.task_id,
                         "success": False,
-                        "error": "Proposal did not contain source_code",
+                        "error": "Proposal source is missing or exceeds the 50000-character limit",
                     })
                     continue
                 try:
