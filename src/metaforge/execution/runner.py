@@ -21,13 +21,16 @@ class CandidateRunner:
         self.timeout_seconds=timeout_seconds; self.max_input_items=max_input_items
         self.max_output_bytes=max_output_bytes
 
-    def run_repeated(self, candidate: Candidate, values: list[int], repeats: int=1) -> list[ExecutionResult]:
+    def run_repeated(self, candidate: Candidate, values: list[int], repeats: int=1, timeout_seconds: float | None=None) -> list[ExecutionResult]:
         if type(repeats) is not int or not 1<=repeats<=20:
             return [ExecutionResult(False,None,None,None,"Repeats must be 1..20")]
         if len(values)>self.max_input_items:
             return [ExecutionResult(False,None,None,None,"Input limit exceeded")]
         if any(type(x) is not int for x in values):
             return [ExecutionResult(False,None,None,None,"Only integer inputs are accepted")]
+        local_timeout = self.timeout_seconds if timeout_seconds is None else min(self.timeout_seconds, timeout_seconds)
+        if local_timeout <= 0:
+            return [ExecutionResult(False,None,None,None,"Global execution budget exhausted")]
         payload=json.dumps({"candidate":candidate.to_dict(),"values":values,"repeats":repeats})
         root=Path(__file__).resolve().parents[2]
         env={"PATH":os.environ.get("PATH",""),"PYTHONIOENCODING":"utf-8","PYTHONHASHSEED":"0"}
@@ -36,7 +39,7 @@ class CandidateRunner:
                  str(root)]
         try:
             proc=subprocess.run(command,input=payload,text=True,capture_output=True,
-                timeout=self.timeout_seconds,env=env,cwd=root,check=False)
+                timeout=local_timeout,env=env,cwd=root,check=False)
         except subprocess.TimeoutExpired:
             return [ExecutionResult(False,None,None,None,"Execution timed out")]
         if len(proc.stdout.encode("utf-8"))>self.max_output_bytes:
@@ -49,5 +52,5 @@ class CandidateRunner:
         return [ExecutionResult(True,item["output"],item["elapsed_seconds"],item["peak_bytes"])
                 for item in result["results"]]
 
-    def run(self,candidate:Candidate,values:list[int])->ExecutionResult:
-        return self.run_repeated(candidate,values,1)[0]
+    def run(self,candidate:Candidate,values:list[int],timeout_seconds:float|None=None)->ExecutionResult:
+        return self.run_repeated(candidate,values,1,timeout_seconds)[0]
