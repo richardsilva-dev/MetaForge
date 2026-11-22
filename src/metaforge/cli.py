@@ -72,6 +72,9 @@ def main() -> int:
     sandbox_check = sub.add_parser("sandbox-check", help="verify a rootless runtime and pinned sandbox image without executing code")
     sandbox_check.add_argument("--runtime", choices=["podman", "docker"], default=os.environ.get("METAFORGE_SANDBOX_RUNTIME", "podman"))
     sandbox_check.add_argument("--image", default=os.environ.get("METAFORGE_SANDBOX_IMAGE"))
+    sandbox_smoke = sub.add_parser("sandbox-smoke", help="run a fixed trusted isolation probe inside the configured sandbox")
+    sandbox_smoke.add_argument("--runtime", choices=["podman", "docker"], default=os.environ.get("METAFORGE_SANDBOX_RUNTIME", "podman"))
+    sandbox_smoke.add_argument("--image", default=os.environ.get("METAFORGE_SANDBOX_IMAGE"))
 
     replay = sub.add_parser("replay", help="re-run an archived experiment using its stored dataset")
     replay.add_argument("--run", type=Path, required=True, help="path to a prior experiment JSON")
@@ -115,7 +118,7 @@ def main() -> int:
             print("Best:", result["best_candidate"]["candidate"])
         return 0
 
-    if args.command == "sandbox-check":
+    if args.command in {"sandbox-check", "sandbox-smoke"}:
         if not args.image:
             parser.error("set --image or METAFORGE_SANDBOX_IMAGE to a locally available sha256-pinned image")
         try:
@@ -124,14 +127,49 @@ def main() -> int:
             preparation = SandboxRunner(SandboxPolicy(image=args.image, runtime=args.runtime)).prepare()
         except Exception as exc:
             parser.error(f"sandbox preflight failed: {type(exc).__name__}")
+        if args.command == "sandbox-check":
+            print({
+                "runtime": preparation.runtime,
+                "runtime_version": preparation.runtime_version,
+                "image": preparation.image,
+                "rootless": preparation.rootless,
+                "code_executed": False,
+            })
+            return 0
+        smoke_source = """
+import json, os, socket, sys
+if os.geteuid() == 0:
+    raise SystemExit(10)
+for path in ("/metaforge-root-write-probe", "/workspace/candidate.py"):
+    try:
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("must-not-write")
+    except OSError:
+        pass
+    else:
+        raise SystemExit(11)
+if "OPENAI_API_KEY" in os.environ:
+    raise SystemExit(12)
+try:
+    socket.create_connection(("1.1.1.1", 53), timeout=0.5)
+except OSError:
+    pass
+else:
+    raise SystemExit(13)
+payload = json.load(sys.stdin)
+print(json.dumps(sorted(payload["values"])))
+"""
+        result = SandboxRunner(SandboxPolicy(image=args.image, runtime=args.runtime)).run_python(
+            smoke_source, [7, 2, 9, 1]
+        )
         print({
             "runtime": preparation.runtime,
-            "runtime_version": preparation.runtime_version,
             "image": preparation.image,
-            "rootless": preparation.rootless,
-            "code_executed": False,
+            "sandbox_smoke_passed": result.success,
+            "measurement_scope": result.measurement_scope,
+            "error": result.error,
         })
-        return 0
+        return 0 if result.success else 1
 
     if args.command == "backend-check":
         if not 1 <= args.size <= 100_000 or not 1 <= args.repeats <= 20 or args.timeout <= 0:
