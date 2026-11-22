@@ -13,6 +13,7 @@ MetaForge runs bounded experiments over algorithm candidates. It generates candi
 - Optional LangGraph adapter (the orchestration extra); the core does not require an LLM or orchestration framework.
 - Built-in sort, insertion sort, merge sort, heapsort, shellsort, quicksort, and hybrid quicksort variants.
 - Seeded population generation, mutation, crossover, Pareto/crowding selection, strategy diversity preservation, and candidate lineage.
+- Multi-objective ranking across median runtime and traced Python allocation peak, with raw repeat samples and median absolute deviation.
 - Correctness gate against Python's independent sorted() oracle.
 - Repeated timing and traced Python-memory measurements.
 - Bounded parallelism, evaluation budget, worker timeout, and global experiment deadline.
@@ -87,8 +88,9 @@ Before enabling agent-generated code execution, implement and independently test
 ## Roadmap
 
 - **V0.1:** controlled experiment loop and correctness gate.
-- **V0.2:** specialist-agent contracts, safety review, bounded scheduling, provenance, lineage, and replay.
-- **V0.3:** crossover, richer mutation operators, diversity preservation, and multi-objective selection.
+- **V0.2 (released):** specialist-agent contracts, mandatory safety review, bounded scheduling, provenance, lineage, and replay.
+- **V0.3 (in progress):** expanded algorithm families, crossover, mutation, Pareto selection, and diversity preservation.
+
 - **V0.4:** external agent-runtime adapters and optional LLM-based proposals behind strict schemas and deterministic gates.
 - **V0.5:** C/Rust backend interfaces with separate compilation/runtime measurement.
 - **V0.6:** hardened sandbox, fuzzing, and sanitizers.
