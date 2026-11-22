@@ -104,7 +104,9 @@ class SandboxRunner:
             except (OSError, subprocess.TimeoutExpired):
                 pass
 
-    def run_python(self, source_code: str, values: list[int]) -> SandboxResult:
+    def run_python(
+        self, source_code: str, values: list[int], timeout_seconds: float | None = None
+    ) -> SandboxResult:
         started = time.perf_counter()
         scope = "rootless_container_end_to_end_wall"
         if not isinstance(source_code, str):
@@ -120,6 +122,14 @@ class SandboxRunner:
         if any(type(value) is not int or not -(2**63) <= value < 2**63 for value in values):
             return SandboxResult(False, None, time.perf_counter() - started, scope,
                                  "Input must contain signed 64-bit integers")
+        if timeout_seconds is not None and (
+            type(timeout_seconds) not in (int, float) or timeout_seconds <= 0
+        ):
+            return SandboxResult(False, None, time.perf_counter() - started, scope,
+                                 "Execution timeout budget is invalid")
+        local_timeout = self.policy.timeout_seconds if timeout_seconds is None else min(
+            self.policy.timeout_seconds, timeout_seconds
+        )
         try:
             preparation = self.prepare()
         except Exception as exc:
@@ -195,7 +205,7 @@ class SandboxRunner:
                 thread.start()
 
             timed_out = False
-            deadline = time.monotonic() + self.policy.timeout_seconds
+            deadline = time.monotonic() + local_timeout
             while process.poll() is None:
                 if overflow.wait(0.05):
                     break
