@@ -46,6 +46,7 @@ class UntrustedDesigner:
                 "candidates": [
                     {"strategy": "not-registered", "pivot": "middle", "insertion_cutoff": 16},
                     {"strategy": "hybrid", "pivot": "middle", "insertion_cutoff": 999},
+                    {"strategy": "hybrid", "pivot": "middle", "insertion_cutoff": 12},
                 ],
                 "rationale": "Malformed proposals must be rejected.",
             },
@@ -59,3 +60,12 @@ def test_orchestrator_rejects_invalid_llm_proposals_and_fills_deterministically(
     assert all(candidate.strategy in {"builtin", "insertion", "merge", "quicksort", "heapsort", "shellsort", "hybrid"} for candidate in population)
     assert orchestrator.last_design_metadata["llm_enabled"] is True
     assert orchestrator.last_design_metadata["fallback_used"] is True
+
+def test_cli_refuses_llm_mode_without_environment_key(monkeypatch):
+    from metaforge.cli import main
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("METAFORGE_AGENT_MODEL", "gpt-5-mini")
+    monkeypatch.setattr("sys.argv", ["metaforge", "run", "--llm-proposals"])
+    with pytest.raises(SystemExit):
+        main()
