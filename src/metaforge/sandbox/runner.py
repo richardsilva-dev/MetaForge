@@ -138,13 +138,14 @@ class SandboxRunner:
                                      "Workspace path contains an unsupported mount delimiter")
             source_path = workspace / "candidate.py"
             source_path.write_bytes(source_bytes)
+            input_path = workspace / "input.json"
+            input_path.write_text(json.dumps({"values": values}, separators=(",", ":")), encoding="utf-8")
             workspace.chmod(0o755)
             cid_directory = tempfile.TemporaryDirectory(prefix="metaforge-cid-")
             cid_file = Path(cid_directory.name) / "container.id"
-            payload = json.dumps({"values": values}, separators=(",", ":")).encode("utf-8")
             mount = f"type=bind,source={workspace},target=/workspace,readonly"
             command = [
-                runtime, "run", "--rm", "--interactive", "--attach=stdin", "--pull=never", f"--cidfile={cid_file}",
+                runtime, "run", "--rm", "--pull=never", f"--cidfile={cid_file}",
                 "--network=none", "--read-only", f"--memory={self.policy.memory_mb}m",
                 f"--memory-swap={self.policy.memory_mb}m", f"--cpus={self.policy.cpu_limit}",
                 f"--pids-limit={self.policy.pids_limit}", "--cap-drop=ALL",
@@ -153,7 +154,7 @@ class SandboxRunner:
                 f"--ulimit=fsize={self.policy.max_output_bytes}:{self.policy.max_output_bytes}",
                 f"--tmpfs=/tmp:rw,noexec,nosuid,nodev,size={self.policy.tmpfs_mb}m,mode=1777",
                 f"--mount={mount}", "--workdir=/workspace", "--entrypoint=python",
-                preparation.image, "-I", "-B", "/workspace/candidate.py",
+                preparation.image, "-I", "-B", "/workspace/candidate.py", "/workspace/input.json",
             ]
             stdout = bytearray()
             stderr = bytearray()
@@ -164,7 +165,7 @@ class SandboxRunner:
             try:
                 process = subprocess.Popen(
                     command,
-                    stdin=subprocess.PIPE,
+                    stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     env=env,
@@ -186,22 +187,9 @@ class SandboxRunner:
                             return
                         target.extend(chunk)
 
-            def send_input() -> None:
-                try:
-                    process.stdin.write(payload)
-                    process.stdin.flush()
-                except (BrokenPipeError, OSError):
-                    pass
-                finally:
-                    try:
-                        process.stdin.close()
-                    except OSError:
-                        pass
-
             readers = [
                 threading.Thread(target=drain, args=(process.stdout, stdout, self.policy.max_output_bytes), daemon=True),
                 threading.Thread(target=drain, args=(process.stderr, stderr, 65_536), daemon=True),
-                threading.Thread(target=send_input, daemon=True),
             ]
             for thread in readers:
                 thread.start()
