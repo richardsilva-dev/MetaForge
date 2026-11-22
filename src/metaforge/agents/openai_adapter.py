@@ -1,25 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 import json
 import os
 import re
 from typing import Any
 
 from metaforge.agents.contracts import AgentResult, AgentTask
-
-
-@dataclass(frozen=True, slots=True)
-class CandidateProposalItem:
-    strategy: str
-    pivot: str
-    insertion_cutoff: int
-
-
-@dataclass(frozen=True, slots=True)
-class CandidateProposal:
-    candidates: list[CandidateProposalItem]
-    rationale: str
 
 
 class OpenAICandidateDesigner:
@@ -39,11 +25,25 @@ class OpenAICandidateDesigner:
     def run(self, task: AgentTask) -> AgentResult:
         try:
             from agents import Agent, ModelSettings, RunConfig, Runner
+            from pydantic import BaseModel, ConfigDict
         except ImportError:
             return AgentResult(
-                self.name, task.task_id, False,
+                self.name,
+                task.task_id,
+                False,
                 error="Install MetaForge with the 'llm' extra to enable the OpenAI Agents SDK adapter.",
             )
+
+        class CandidateProposalItem(BaseModel):
+            model_config = ConfigDict(extra="forbid", strict=True)
+            strategy: str
+            pivot: str
+            insertion_cutoff: int
+
+        class CandidateProposal(BaseModel):
+            model_config = ConfigDict(extra="forbid", strict=True)
+            candidates: list[CandidateProposalItem]
+            rationale: str
 
         try:
             payload = {
@@ -93,7 +93,9 @@ class OpenAICandidateDesigner:
             proposal = result.final_output
             if not isinstance(proposal, CandidateProposal):
                 return AgentResult(
-                    self.name, task.task_id, False,
+                    self.name,
+                    task.task_id,
+                    False,
                     error="The model did not return the required structured candidate proposal.",
                 )
             return AgentResult(
@@ -101,13 +103,12 @@ class OpenAICandidateDesigner:
                 task.task_id,
                 True,
                 {
-                    "candidates": [asdict(item) for item in proposal.candidates],
+                    "candidates": [item.model_dump() for item in proposal.candidates],
                     "rationale": proposal.rationale[:1000],
                     "model": self.model_label,
                 },
             )
         except Exception as exc:
-            # Keep a short diagnostic while redacting credential-shaped values.
             detail = str(exc)[:500]
             api_key = os.environ.get("OPENAI_API_KEY")
             if api_key:
