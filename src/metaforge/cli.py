@@ -88,6 +88,14 @@ def main() -> int:
     code_evolve.add_argument("--sandbox-timeout", type=float, default=10.0)
     code_evolve.add_argument("--output", type=Path, default=Path(".artifacts/code-evolution.json"))
 
+    code_replay = sub.add_parser("code-replay", help="re-evaluate archived source candidates without model calls")
+    code_replay.add_argument("--run", type=Path, required=True)
+    code_replay.add_argument("--global-timeout", type=float, default=180.0)
+    code_replay.add_argument("--sandbox-runtime", choices=["podman", "docker"], default=os.environ.get("METAFORGE_SANDBOX_RUNTIME", "podman"))
+    code_replay.add_argument("--sandbox-image", default=os.environ.get("METAFORGE_SANDBOX_IMAGE"))
+    code_replay.add_argument("--sandbox-timeout", type=float, default=10.0)
+    code_replay.add_argument("--output", type=Path, default=Path(".artifacts/code-replay.json"))
+
     backend_check = sub.add_parser("backend-check", help="compare correctness across Python and compiled backends")
     backend_check.add_argument("--backend", choices=["rust", "c", "both"], default="both")
     backend_check.add_argument("--strategy", choices=["builtin", "heapsort", "shellsort"], default="heapsort")
@@ -145,6 +153,40 @@ def main() -> int:
         if result["best_candidate"]:
             print("Best:", result["best_candidate"]["candidate"])
         return 0
+
+    if args.command == "code-replay":
+        if not args.run.is_file():
+            parser.error(f"replay artifact does not exist: {args.run}")
+        if not args.sandbox_image:
+            parser.error("set --sandbox-image or METAFORGE_SANDBOX_IMAGE to a local sha256-pinned image")
+        try:
+            original = json.loads(args.run.read_text(encoding="utf-8"))
+            from metaforge.evolution.code_replay import CodeReplayEngine
+            from metaforge.sandbox.policy import SandboxPolicy
+            from metaforge.sandbox.runner import SandboxRunner
+            sandbox = SandboxRunner(SandboxPolicy(
+                image=args.sandbox_image,
+                runtime=args.sandbox_runtime,
+                timeout_seconds=args.sandbox_timeout,
+            ))
+            result = CodeReplayEngine(
+                sandbox, global_timeout_seconds=args.global_timeout
+            ).run(original)
+            from metaforge.reporting.code_replay_markdown import render_code_replay_report
+            save_run(result, args.output)
+            archive_path = archive_run(result, args.output.parent / "runs")
+            report = render_code_replay_report(result)
+            args.output.with_suffix(".md").write_text(report, encoding="utf-8")
+            archive_path.with_suffix(".md").write_text(report, encoding="utf-8")
+            print(f"JSON: {args.output}")
+            print(f"Archive: {archive_path}")
+            print(f"Report: {args.output.with_suffix('.md')}")
+            if result["best_candidate"]:
+                print("Best replayed median seconds:", result["best_candidate"]["median_algorithm_seconds"])
+                return 0
+            return 1
+        except Exception as exc:
+            parser.error(f"code-replay stopped safely: {type(exc).__name__}: {exc}")
 
     if args.command == "code-evolve":
         if not os.environ.get("OPENAI_API_KEY"):
