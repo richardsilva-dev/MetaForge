@@ -38,6 +38,20 @@ def render_report(result: dict[str, Any]) -> str:
         f"- Stop reason: {budget.get('stop_reason', 'unknown')}",
         "",
     ]
+    design = result.get("agent_design", {})
+    if design:
+        lines += [
+            "## Candidate designer",
+            "",
+            f"- Agent: {design.get('agent_name', design.get('mode', 'unknown'))}",
+            f"- LLM enabled: {design.get('llm_enabled', False)}",
+            f"- Request succeeded: {design.get('request_success', 'not applicable')}",
+            f"- Deterministic fallback used: {design.get('fallback_used', False)}",
+            f"- Model: {design.get('model') or 'not applicable'}",
+            f"- Accepted proposals: {design.get('accepted_count', 'not applicable')}",
+            "",
+        ]
+
     best = result.get("best_candidate")
     if best:
         lineage = best.get("lineage", {})
