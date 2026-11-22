@@ -71,7 +71,7 @@ The CLI's synthetic dataset is embedded in its run artifact so the experiment ca
 
     python -m metaforge.cli replay --run .artifacts/runs/<run_id>.json
 
-Replay verifies the embedded dataset hash and repeats the same candidate-generation/evaluation sequence. Timing values are not expected to match because machine load, CPU frequency, Python runtime, and operating-system scheduling vary. The report states whether the candidate fingerprint/validity sequence matches.
+Replay verifies the embedded dataset hash and reuses the exact candidate populations and lineage archived for each generation. This prevents new timing measurements from changing the evolutionary path. Timing values are not expected to match because machine load, CPU frequency, Python runtime, and operating-system scheduling vary.
 
 ## Tests
 
@@ -89,9 +89,9 @@ Before enabling agent-generated code execution, implement and independently test
 
 - **V0.1:** controlled experiment loop and correctness gate.
 - **V0.2 (released):** specialist-agent contracts, mandatory safety review, bounded scheduling, provenance, lineage, and replay.
-- **V0.3 (in progress):** expanded algorithm families, crossover, mutation, Pareto selection, and diversity preservation.
+- **V0.3 (released):** expanded algorithm families, crossover, mutation, Pareto selection, diversity preservation, raw measurement samples, and exact candidate-schedule replay.
 
-- **V0.4:** external agent-runtime adapters and optional LLM-based proposals behind strict schemas and deterministic gates.
+- **V0.4 (in progress):** optional LLM-based candidate proposals through an established agent runtime, using strict structured outputs and deterministic gates.
 - **V0.5:** C/Rust backend interfaces with separate compilation/runtime measurement.
 - **V0.6:** hardened sandbox, fuzzing, and sanitizers.
 - **V1.0:** extensible multi-problem research laboratory.
