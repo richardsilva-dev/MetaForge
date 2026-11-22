@@ -144,7 +144,7 @@ class SandboxRunner:
             payload = json.dumps({"values": values}, separators=(",", ":")).encode("utf-8")
             mount = f"type=bind,source={workspace},target=/workspace,readonly"
             command = [
-                runtime, "run", "--rm", "--interactive", "--pull=never", f"--cidfile={cid_file}",
+                runtime, "run", "--rm", "--interactive", "--attach=stdin", "--pull=never", f"--cidfile={cid_file}",
                 "--network=none", "--read-only", f"--memory={self.policy.memory_mb}m",
                 f"--memory-swap={self.policy.memory_mb}m", f"--cpus={self.policy.cpu_limit}",
                 f"--pids-limit={self.policy.pids_limit}", "--cap-drop=ALL",
@@ -235,7 +235,7 @@ class SandboxRunner:
             if overflow.is_set():
                 return SandboxResult(False, None, elapsed, scope, "Sandbox output limit exceeded")
             if process.returncode != 0:
-                detail = stderr.decode("utf-8", errors="replace").strip()[:500]
+                detail = stderr.decode("utf-8", errors="replace").strip()[:2000]
                 error = f"Sandbox process returned non-zero status ({process.returncode})"
                 if detail:
                     error += f": {detail}"
