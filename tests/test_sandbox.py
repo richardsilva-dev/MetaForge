@@ -69,7 +69,7 @@ def test_rootless_sandbox_runs_with_required_isolation_flags(tmp_path):
     for required in (
         "--network=none", "--read-only", "--cap-drop=ALL",
         "--security-opt=no-new-privileges", "--user=65534:65534",
-        "--pids-limit=64", "--memory=256m", "--memory-swap=256m",
+        "--pids-limit=64", "--memory=256m", "--memory-swap=256m", "--shm-size=16m", "--ulimit=core=0:0",
         "--pull=never", "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777",
     ):
         assert required in args
