@@ -11,8 +11,8 @@ MetaForge runs bounded experiments over algorithm candidates. It generates candi
 - Deterministic specialist-agent contracts, registry, and workflow.
 - Candidate Designer, mandatory Candidate Safety Reviewer, and Benchmark Analyst.
 - Optional LangGraph adapter (the orchestration extra); the core does not require an LLM or orchestration framework.
-- Built-in sort, insertion sort, merge sort, and iterative three-way quicksort variants.
-- Seeded population generation, mutation, elitist selection, and candidate lineage.
+- Built-in sort, insertion sort, merge sort, heapsort, shellsort, quicksort, and hybrid quicksort variants.
+- Seeded population generation, mutation, crossover, Pareto/crowding selection, strategy diversity preservation, and candidate lineage.
 - Correctness gate against Python's independent sorted() oracle.
 - Repeated timing and traced Python-memory measurements.
 - Bounded parallelism, evaluation budget, worker timeout, and global experiment deadline.
@@ -58,7 +58,7 @@ Optional LangGraph integration:
 
 ## Run an experiment
 
-    python -m metaforge.cli run --size 200 --generations 3 --seed 7 --repeats 3 --population-size 8 --max-evaluations 64 --max-workers 2 --global-timeout 120
+    python -m metaforge.cli run --size 200 --generations 3 --seed 7 --repeats 3 --population-size 15 --max-evaluations 64 --max-workers 2 --global-timeout 120
 
 The CLI writes:
 - .artifacts/latest.json and .artifacts/latest.md as convenient latest-run pointers.
