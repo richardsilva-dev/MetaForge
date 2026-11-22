@@ -21,7 +21,7 @@ Run `python -m metaforge.cli sandbox-check` for preflight only. Then run `python
 
 ## Enforced container configuration
 
-The runner uses a non-root UID/GID, no network, read-only root filesystem, one read-only bind mount containing only `candidate.py` and `input.json`, dropped Linux capabilities, no-new-privileges, CPU and memory limits with swap disabled, a PID limit, bounded file descriptors and file size, a small no-exec tmpfs, bounded stdout/stderr readers, wall-clock timeout, and container kill/removal on timeout or output overflow.
+The runner uses a non-root UID/GID, no network, read-only root filesystem, one read-only bind mount containing `candidate.py`, `input.json`, and the trusted timing wrapper, dropped Linux capabilities, no-new-privileges, CPU and memory limits with swap disabled, a PID limit, bounded file descriptors and file size, a small no-exec tmpfs, bounded stdout/stderr readers, wall-clock timeout, and container kill/removal on timeout or output overflow.
 
 The container receives no explicit host environment variables. The host runtime client receives only the minimum connection-related environment needed to reach the rootless runtime. The trusted wrapper reads `/workspace/input.json`, loads the candidate module, and calls its pure `solve(values)` function repeatedly with fresh copies. The wrapper measures algorithm time with `perf_counter_ns`, validates each result, and emits structured JSON. The host independently verifies the final output. Container wall time and algorithm-only samples are recorded separately.
 
@@ -31,13 +31,13 @@ This is defense in depth, not a proof against container escapes. The host kernel
 
 The image digest must be reviewed and updated deliberately. The runner uses pull=never, so it cannot silently fetch a new image. Do not replace the digest with a mutable tag.
 
-## Integration gate
+## Operator gate
 
-Do not connect this runner to the evolution engine until:
-1. a real rootless runtime passes preflight on the target host;
-2. a pinned minimal Python image is verified locally;
-3. an end-to-end container test confirms all restrictions and teardown behavior;
-4. output/timeout tests are repeated against the real runtime;
-5. the sandbox threat model is reviewed independently.
+The source-level CodeEvolutionEngine is implemented and the complete scripted code-generation-to-container path passes in CI. Before invoking `code-evolve` on a target machine, the operator must:
+1. install and start a rootless runtime;
+2. pull the exact pinned image digest;
+3. run `sandbox-check` and confirm `rootless: true`;
+4. run `sandbox-smoke` and confirm every isolation probe passes;
+5. keep the model API key in the local host environment only.
 
-Until then, agent-generated code remains inert text and trusted allow-listed algorithms remain the only executable candidates.
+If any check fails, do not invoke `code-evolve`. The CLI performs preflight again before making model calls and stops safely if it fails.
