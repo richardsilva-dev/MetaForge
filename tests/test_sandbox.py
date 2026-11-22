@@ -16,6 +16,7 @@ def _fake_runtime(tmp_path: Path, mode: str = "success") -> Path:
     script = tmp_path / f"fake_runtime_{mode}"
     source = f"""#!{sys.executable}
 import json
+import os
 from pathlib import Path
 import sys
 import time
@@ -110,3 +111,17 @@ def test_invalid_source_is_rejected_before_runtime_preflight():
     result = runner.run_python("", [1])
     assert result.success is False
     assert result.error == "Source size limit exceeded"
+
+def test_host_api_key_is_not_passed_to_runtime_client(tmp_path, monkeypatch):
+    runtime = _fake_runtime(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-secret-must-not-propagate")
+    runner = SandboxRunner(SandboxPolicy(image=IMAGE), str(runtime))
+    result = runner.run_python("print('candidate placeholder')", [2, 1])
+    assert result.success is True
+
+
+def test_sandbox_policy_rejects_boolean_resource_limits():
+    with pytest.raises(ValueError):
+        SandboxPolicy(image=IMAGE, cpu_limit=True)
+    with pytest.raises(ValueError):
+        SandboxPolicy(image=IMAGE, timeout_seconds=True)
