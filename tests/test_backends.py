@@ -34,6 +34,9 @@ def test_compiled_backend_matches_sorting_oracle(backend_name):
     assert preparation.backend == backend_name
     assert preparation.version
     assert preparation.compile_seconds >= 0
+    assert len(preparation.source_sha256) == 64
+    assert len(preparation.artifact_sha256) == 64
+    assert preparation.build_flags
 
     rng = random.Random(31415)
     datasets = [
