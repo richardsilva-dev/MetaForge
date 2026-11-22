@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import json
+import os
+import re
 from typing import Any
 
 from metaforge.agents.contracts import AgentResult, AgentTask
@@ -105,10 +107,15 @@ class OpenAICandidateDesigner:
                 },
             )
         except Exception as exc:
-            # Avoid copying provider exception details that could contain request metadata.
+            # Keep a short diagnostic while redacting credential-shaped values.
+            detail = str(exc)[:500]
+            api_key = os.environ.get("OPENAI_API_KEY")
+            if api_key:
+                detail = detail.replace(api_key, "[REDACTED_API_KEY]")
+            detail = re.sub(r"sk-[A-Za-z0-9_-]{12,}", "[REDACTED_API_KEY]", detail)
             return AgentResult(
                 self.name,
                 task.task_id,
                 False,
-                error=f"{type(exc).__name__}: candidate proposal request failed",
+                error=f"{type(exc).__name__}: {detail or 'candidate proposal request failed'}",
             )
