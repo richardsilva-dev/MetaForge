@@ -10,3 +10,8 @@ def test_sorting(candidate):
 
 def test_reject_unknown_strategy():
     with pytest.raises(ValueError): Candidate("untrusted")
+
+@pytest.mark.parametrize("policy",["first","last"])
+def test_quicksort_handles_adversarial_order_without_recursion(policy):
+    values=list(range(2500))
+    assert run_candidate(Candidate("quicksort",policy),values)==values
