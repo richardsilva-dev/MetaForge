@@ -151,7 +151,7 @@ class CodeReplayEngine:
                 len(samples) == repeats
                 and all(type(value) in (int, float) and math.isfinite(value) and value >= 0 for value in samples)
             )
-            if execution.success and valid_samples:
+            if execution.success and execution.output == sorted(dataset) and valid_samples:
                 record["correctness_passed"] = True
                 record["algorithm_samples_seconds"] = list(samples)
                 record["median_algorithm_seconds"] = statistics.median(samples)
