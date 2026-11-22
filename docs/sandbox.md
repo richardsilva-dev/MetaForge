@@ -21,9 +21,9 @@ Run `python -m metaforge.cli sandbox-check` for preflight only. Then run `python
 
 ## Enforced container configuration
 
-The runner uses a non-root UID/GID, no network, read-only root filesystem, one read-only bind mount containing only `candidate.py`, dropped Linux capabilities, no-new-privileges, CPU and memory limits with swap disabled, a PID limit, bounded file descriptors and file size, a small no-exec tmpfs, bounded stdout/stderr readers, wall-clock timeout, and container kill/removal on timeout or output overflow.
+The runner uses a non-root UID/GID, no network, read-only root filesystem, one read-only bind mount containing only `candidate.py` and `input.json`, dropped Linux capabilities, no-new-privileges, CPU and memory limits with swap disabled, a PID limit, bounded file descriptors and file size, a small no-exec tmpfs, bounded stdout/stderr readers, wall-clock timeout, and container kill/removal on timeout or output overflow.
 
-The container receives no explicit host environment variables. The host runtime client receives only the minimum connection-related environment needed to reach the rootless runtime. The candidate receives its integer input over stdin as JSON and must return a JSON list of integers on stdout. An independent host-side oracle verifies the result.
+The container receives no explicit host environment variables. The host runtime client receives only the minimum connection-related environment needed to reach the rootless runtime. The candidate reads its integer input from the read-only `/workspace/input.json` file and must return a JSON list of integers on stdout. An independent host-side oracle verifies the result.
 
 ## Threat model and residual risks
 
