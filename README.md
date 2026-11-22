@@ -96,9 +96,9 @@ Install a Rust toolchain (rustc and cargo) and a C compiler (cc, clang, or gcc),
 
 The command checks outputs against Python's sorted() oracle and writes a JSON report. Python peak memory uses tracemalloc; native backends currently do not report comparable peak-memory measurements. Runtime measurement scopes differ, so the report deliberately does not claim cross-language performance rankings. Only trusted source files already in this repository are compiled; generated source is never accepted.
 
-## Sandbox status (V0.6)
+## Sandbox status (V0.6/V0.7)
 
-A fail-closed Python container runner is implemented but is not connected to evolutionary candidate execution. It requires rootless Podman or rootless Docker and a locally available image pinned by sha256 digest. It disables networking, mounts only the candidate workspace read-only, uses a non-root UID, read-only root filesystem, dropped capabilities, no-new-privileges, CPU/memory/PID limits, a no-exec tmpfs, a wall-clock timeout, and bounded stdout/stderr capture.
+A fail-closed Python container runner is implemented but is not connected to evolutionary candidate execution. It requires rootless Podman or rootless Docker and a locally available image pinned by sha256 digest. It disables networking, mounts only the candidate workspace read-only, uses a non-root UID, read-only root filesystem, dropped capabilities, no-new-privileges, CPU/memory/PID limits, a no-exec tmpfs, a wall-clock timeout, and bounded stdout/stderr capture. A trusted in-container wrapper measures repeated calls to a pure `solve(values)` function with `perf_counter_ns`; container startup wall time is kept separate from algorithm samples.
 
 Configure the runtime and immutable image reference, then verify the environment without executing any source:
 
@@ -109,7 +109,7 @@ Configure the runtime and immutable image reference, then verify the environment
     python -m metaforge.cli sandbox-check
     python -m metaforge.cli sandbox-smoke
 
-The sandbox has only fake-runtime policy/timeout/output tests in CI so far; it has not been validated against a live container engine on the target host. It is therefore not enabled for agent-generated code. Container isolation also does not eliminate kernel/runtime vulnerabilities; use a dedicated isolated host or VM for high-risk experiments.
+The complete rootless Podman smoke passed in GitHub Actions with the pinned image, including cgroup, mount, network, privilege, and credential-isolation checks. The target Windows/WSL host still requires its own preflight and smoke run. The V0.7 code-evolution engine now routes candidate execution exclusively through this sandbox after static AST review; it fails closed if preflight is unavailable. Container isolation does not eliminate kernel/runtime vulnerabilities; use a dedicated isolated host or VM for high-risk experiments.
 
 ## Tests
 
