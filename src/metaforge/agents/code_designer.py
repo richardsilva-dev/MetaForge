@@ -22,7 +22,17 @@ class OpenAICodeDesigner:
         self.timeout_seconds = float(timeout_seconds)
         self.model_label = model if isinstance(model, str) else type(model).__name__
 
-    def run(self, task: AgentTask) -> AgentResult:
+    def run(self, task: AgentTask, timeout_seconds: float | None = None) -> AgentResult:
+        if timeout_seconds is not None and (
+            type(timeout_seconds) not in (int, float) or timeout_seconds < 1.0
+        ):
+            return AgentResult(
+                self.name, task.task_id, False,
+                error="Insufficient global time budget for a model call.",
+            )
+        local_timeout = self.timeout_seconds if timeout_seconds is None else min(
+            self.timeout_seconds, float(timeout_seconds)
+        )
         try:
             from agents import Agent, ModelSettings, RunConfig, Runner
             from pydantic import BaseModel, ConfigDict, Field
@@ -78,7 +88,7 @@ class OpenAICodeDesigner:
                 model=self.model,
                 output_type=CodeProposal,
                 model_settings=ModelSettings(
-                    timeout=self.timeout_seconds,
+                    timeout=local_timeout,
                     tool_choice="none",
                 ),
                 tools=[],
