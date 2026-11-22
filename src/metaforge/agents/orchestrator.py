@@ -11,6 +11,7 @@ class AgentOrchestrator:
     """Coordinates specialists; deterministic safety and correctness gates stay authoritative."""
 
     def __init__(self, seed: int = 7, candidate_designer: SpecialistAgent | None = None) -> None:
+        self.seed = seed
         self.registry = AgentRegistry()
         self.fallback_designer = CandidateDesigner(seed)
         self.external_designer_enabled = candidate_designer is not None
@@ -20,7 +21,8 @@ class AgentOrchestrator:
         self.last_design_metadata: dict = {}
 
     def design_population(self, size: int, task_id: str) -> list[Candidate]:
-        allowed = CandidateGenerator(seed=7).initial_population(15)
+        allowed = CandidateGenerator(seed=self.seed).initial_population(15)
+        allowed_fingerprints = {candidate.fingerprint for candidate in allowed}
         task = AgentTask(
             task_id,
             "propose a bounded population of allow-listed candidate descriptors",
@@ -39,7 +41,7 @@ class AgentOrchestrator:
                     candidate = Candidate.from_dict(raw)
                 except (TypeError, ValueError):
                     continue
-                if candidate.fingerprint not in seen:
+                if candidate.fingerprint in allowed_fingerprints and candidate.fingerprint not in seen:
                     accepted.append(candidate)
                     seen.add(candidate.fingerprint)
 
@@ -57,7 +59,7 @@ class AgentOrchestrator:
                         seen.add(candidate.fingerprint)
 
         if not accepted:
-            accepted = CandidateGenerator(seed=7).initial_population(size)
+            accepted = CandidateGenerator(seed=self.seed).initial_population(size)
         while len(accepted) < size:
             accepted.append(accepted[len(accepted) % len(accepted)])
 
