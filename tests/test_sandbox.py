@@ -51,7 +51,7 @@ elif args and args[0] == "run":
         source_path = mount_spec.split("source=", 1)[1].split(",target=", 1)[0]
         payload = json.loads((Path(source_path) / "input.json").read_text(encoding="utf-8"))
         repeats = int(args[-2])
-        print(json.dumps({"output": sorted(payload["values"]), "samples_ns": [1000] * repeats}))
+        print(json.dumps({{"output": sorted(payload["values"]), "samples_ns": [1000] * repeats}}))
 else:
     raise SystemExit(2)
 """
