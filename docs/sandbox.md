@@ -2,7 +2,7 @@
 
 ## Status
 
-The fail-closed Python container runner is implemented as an isolated subsystem. It is deliberately not wired into the evolutionary engine and no agent-generated source is executed by default. The complete smoke passed in GitHub Actions using rootless Podman 5.7.0 and the pinned Python 3.12 image. The operator's target host still requires its own preflight and smoke validation.
+The fail-closed Python container runner is implemented and used by the V0.7 CodeEvolutionEngine after static AST review. It is not used by the descriptor-only EvolutionEngine. The complete smoke passed in GitHub Actions using rootless Podman 5.7.0 and the pinned Python 3.12 image. The operator's target host still requires its own preflight and smoke validation before invoking code evolution.
 
 ## Required configuration
 
