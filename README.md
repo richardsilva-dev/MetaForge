@@ -86,6 +86,16 @@ The CLI's synthetic dataset is embedded in its run artifact so the experiment ca
 
 Replay verifies the embedded dataset hash and reuses the exact candidate populations and lineage archived for each generation. This prevents new timing measurements from changing the evolutionary path. Timing values are not expected to match because machine load, CPU frequency, Python runtime, and operating-system scheduling vary.
 
+## Compiled-language backends (V0.5)
+
+MetaForge now defines a versioned execution-backend contract and includes repository-owned C11 and Rust implementations for built-in sort, heapsort, and shellsort. The Rust build is dependency-free and uses Cargo offline. Both native backends report compilation time separately from algorithm runtime.
+
+Install a Rust toolchain (rustc and cargo) and a C compiler (cc, clang, or gcc), then run:
+
+    python -m metaforge.cli backend-check --backend both --strategy heapsort --size 1000 --repeats 3
+
+The command checks outputs against Python's sorted() oracle and writes a JSON report. Python peak memory uses tracemalloc; native backends currently do not report comparable peak-memory measurements. Runtime measurement scopes differ, so the report deliberately does not claim cross-language performance rankings. Only trusted source files already in this repository are compiled; generated source is never accepted.
+
 ## Tests
 
     python -m pytest
@@ -105,7 +115,7 @@ Before enabling agent-generated code execution, implement and independently test
 - **V0.3 (released):** expanded algorithm families, crossover, mutation, Pareto selection, diversity preservation, raw measurement samples, and exact candidate-schedule replay.
 
 - **V0.4 (released):** optional OpenAI Agents SDK candidate proposals through strict structured outputs, no tools, one-turn/time limits, allow-list validation, and deterministic fallback.
-- **V0.5 (in progress):** versioned backend interfaces and isolated Rust/C trusted implementations with compilation and runtime measurements kept separate.
+- **V0.5 (in progress):** versioned backend interfaces and trusted Rust/C implementations with compilation and runtime measurements kept separate.
 
 - **V0.6:** hardened sandbox, fuzzing, and sanitizers.
 - **V1.0:** extensible multi-problem research laboratory.
