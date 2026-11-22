@@ -49,7 +49,7 @@ python -m pip install -e ".[dev]"
 ## Run
 
 ```bash
-python -m metaforge.cli run --size 200 --generations 3 --seed 7
+python -m metaforge.cli run --size 200 --generations 3 --seed 7 --max-evaluations 64 --max-workers 2 --global-timeout 120
 ```
 
 Outputs are written to `.artifacts/latest.json` and `.artifacts/latest.md`.
