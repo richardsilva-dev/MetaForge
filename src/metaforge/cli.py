@@ -202,7 +202,7 @@ except OSError:
 else:
     fail(22)
 
-payload = json.load(sys.stdin)
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
 print(json.dumps(sorted(payload["values"])))
 """
         result = SandboxRunner(SandboxPolicy(image=args.image, runtime=args.runtime)).run_python(
