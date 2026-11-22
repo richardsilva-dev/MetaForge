@@ -133,15 +133,18 @@ class CodeEvolutionEngine:
 
         # Fail closed before spending model tokens or accepting source proposals.
         deadline = time.monotonic() + self.global_timeout_seconds
-        preparation: SandboxPreparation = self.sandbox_runner.prepare()
-        if not preparation.rootless:
-            raise RuntimeError("Code evolution requires a rootless sandbox runtime")
+        preparation = self.sandbox_runner.prepare()
+        if not isinstance(preparation, SandboxPreparation) or not preparation.rootless:
+            raise RuntimeError("Code evolution requires a verified rootless sandbox runtime")
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise RuntimeError("Global time budget exhausted during sandbox preflight")
         smoke = self.sandbox_runner.smoke(timeout_seconds=remaining)
-        if not smoke.success:
-            raise RuntimeError(f"Rootless sandbox smoke failed: {smoke.error or 'policy verification failed'}")
+        if not isinstance(smoke, SandboxResult) or not smoke.success:
+            detail = smoke.error if isinstance(smoke, SandboxResult) else "invalid smoke result"
+            raise RuntimeError(f"Rootless sandbox smoke failed: {detail or 'policy verification failed'}")
+        if len(smoke.algorithm_samples_seconds) != 2:
+            raise RuntimeError("Rootless sandbox smoke returned invalid timing samples")
         calls_used = 0
         stop_reason = "generation_limit"
         seen_fingerprints: set[str] = set()
