@@ -26,7 +26,7 @@ class FakeSandboxRunner(SandboxRunner):
         return SandboxPreparation("podman", "fake 1.0", IMAGE, True)
 
     def run_python(self, source_code, values, timeout_seconds=None, repeats=1, smoke_probe=False):
-        self.run_calls.append((source_code, list(values), timeout_seconds, repeats))
+        self.run_calls.append((source_code, list(values), timeout_seconds, repeats, smoke_probe))
         samples = tuple(0.002 for _ in range(repeats))
         return SandboxResult(True, sorted(values), 0.03, "fake_internal", None, samples)
 
@@ -77,7 +77,9 @@ def test_code_evolution_runs_reviewed_candidates_only_and_tracks_lineage():
     result = engine.run([5, 1, 4, 2, 3])
     assert result["best_candidate"] is not None
     assert result["budget"]["agent_calls_used"] == 4
-    assert len(sandbox.run_calls) == 4
+    assert len(sandbox.run_calls) == 5
+    assert sandbox.run_calls[0][4] is True
+    assert all(call[4] is False for call in sandbox.run_calls[1:])
     assert len(result["generations"]) == 2
     assert all(item["correctness_passed"] for generation in result["generations"] for item in generation["evaluations"])
     assert all(task.payload["parent_source"] is None for task in designer.tasks[:2])
@@ -93,7 +95,7 @@ def test_invalid_source_is_rejected_without_sandbox_execution():
     )
     result = engine.run([3, 1, 2])
     assert result["best_candidate"] is None
-    assert sandbox.run_calls == []
+    assert len(sandbox.run_calls) == 1 and sandbox.run_calls[0][4] is True
     assert result["generations"][0]["proposals"][0]["success"] is False
 
 
