@@ -48,7 +48,7 @@ class SandboxRunner:
     def _runtime_env(self) -> dict[str, str]:
         allowed = (
             "PATH", "HOME", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG",
-            "CONTAINER_HOST", "XDG_RUNTIME_DIR",
+            "CONTAINER_HOST", "XDG_RUNTIME_DIR", "SYSTEMROOT", "WINDIR", "USERPROFILE", "APPDATA", "LOCALAPPDATA",
         )
         return {key: os.environ[key] for key in allowed if os.environ.get(key)}
 
