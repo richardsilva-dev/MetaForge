@@ -107,16 +107,17 @@ def main() -> int:
     )
     stored_generations = original.get("generations", [])
     has_schedule = (
-        len(stored_generations) == config["generations_requested"]
+        bool(stored_generations)
         and all(isinstance(item, dict) and isinstance(item.get("candidate_population"), list)
                 for item in stored_generations)
     )
+    replay_generations = len(stored_generations) if has_schedule else config["generations_requested"]
     candidate_schedule = (
         [item["candidate_population"] for item in stored_generations] if has_schedule else None
     )
     result = engine.run(
         dataset,
-        config["generations_requested"],
+        replay_generations,
         candidate_schedule=candidate_schedule,
     )
     result["replay"] = replay_data
@@ -124,6 +125,8 @@ def main() -> int:
         "run_id": original.get("run_id"),
         "dataset_sha256": digest,
         "candidate_schedule_replayed": has_schedule,
+        "generations_replayed": replay_generations,
+        "generations_requested_original": config["generations_requested"],
         "candidate_sequence_matches": _candidate_signature(original) == _candidate_signature(result),
         "performance_comparison": "Timing values are new measurements and are not expected to match.",
     }
