@@ -12,7 +12,7 @@ def runtime_metadata() -> dict[str, Any]:
     try:
         package_version = version("metaforge")
     except PackageNotFoundError:
-        package_version = "0.3.0"
+        package_version = "0.4.0"
     return {
         "metaforge_version": package_version,
         "python_version": platform.python_version(),
