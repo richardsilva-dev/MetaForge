@@ -90,6 +90,10 @@ fn main() {
     println!("{elapsed_ns}");
     println!(
         "{}",
-        values.iter().map(i64::to_string).collect::<Vec<_>>().join(" ")
+        values
+            .iter()
+            .map(i64::to_string)
+            .collect::<Vec<_>>()
+            .join(" ")
     );
 }
