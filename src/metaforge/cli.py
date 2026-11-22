@@ -11,6 +11,7 @@ from typing import Any
 from uuid import uuid4
 
 from metaforge.evolution.engine import EvolutionEngine
+from metaforge.evolution.metadata import runtime_metadata
 from metaforge.candidates.models import Candidate
 from metaforge.backends.python import PythonBackend
 from metaforge.reporting.markdown import render_report
@@ -146,7 +147,11 @@ def main() -> int:
                     "backend": backend.name,
                     "version": preparation.version,
                     "compile_seconds": preparation.compile_seconds,
+                    "source_sha256": preparation.source_sha256,
+                    "artifact_sha256": preparation.artifact_sha256,
+                    "build_flags": list(preparation.build_flags),
                     "correctness_passed": True,
+                    "samples_seconds": times,
                     "median_algorithm_seconds": statistics.median(times),
                     "median_peak_bytes": statistics.median(peaks) if peaks else None,
                     "measurement_scope": runs[0].measurement_scope,
@@ -163,7 +168,9 @@ def main() -> int:
             "problem": "integer_sort",
             "strategy": args.strategy,
             "dataset_size": len(dataset),
+            "dataset_sha256": hashlib.sha256(json.dumps(dataset, separators=(",", ":")).encode()).hexdigest(),
             "seed": args.seed,
+            "environment": runtime_metadata(),
             "results": results,
             "comparison_note": "Compile time is separate. Runtime and memory metrics have backend-specific scopes and must not be treated as directly comparable.",
         }
