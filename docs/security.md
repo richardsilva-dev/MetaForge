@@ -30,4 +30,4 @@ A future sandbox must fail closed and be independently tested. At minimum:
 - no host Docker socket, package-manager credentials, or arbitrary mounts;
 - audit logs and reproducible sandbox image/version.
 
-Until these controls exist, agent-generated source remains data for review and is never compiled or executed by MetaForge.
+The Rust and C backends compile only fixed source files shipped in this repository. They do not accept candidate-provided source paths or generated code. Until the sandbox controls above exist, agent-generated source remains data for review and is never compiled or executed by MetaForge.
