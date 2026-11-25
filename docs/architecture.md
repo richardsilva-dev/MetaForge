@@ -46,3 +46,14 @@ The static project report also includes a Python dependency graph derived only f
 
 
 The dependency graph includes per-module in-degree and out-degree, explicit entry-point nodes, and a conservative reachability traversal over resolved local import edges. Reachability means structurally reachable from a detected entry point; it does not establish runtime execution or dynamic-import behavior.
+
+
+### Dependency manifest inventory
+
+The static project analyzer reads a small, explicit allow-list of root dependency manifests
+(pyproject.toml, requirements.txt, package.json, Cargo.toml, go.mod, composer.json,
+and pom.xml) through the same bounded, hash-verified snapshot path as source files.
+It records declared dependency names, version requirements, and manifest groups.
+It does not install packages, execute build scripts, contact registries, or claim that
+a declaration is a resolved dependency graph. Manifest files remain protected from
+project patch operations.
