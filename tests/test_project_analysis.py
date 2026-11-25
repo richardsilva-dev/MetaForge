@@ -1,6 +1,6 @@
 from pathlib import Path
 import pytest
-from metaforge.projects import ProjectContractError, analyze_project, capture_project_snapshot
+from metaforge.projects import ProjectContractError, ProjectPatch, analyze_project, capture_project_snapshot
 
 def _project(root: Path):
     (root / "src" / "sample").mkdir(parents=True)
@@ -145,3 +145,17 @@ def test_supported_manifest_formats_are_inventory_only(tmp_path):
     assert any(item["ecosystem"] == "python" and item["name"] == "httpx" for item in dependencies)
     assert any(item["ecosystem"] == "php" and item["name"] == "vendor/package" for item in dependencies)
     assert any(item["ecosystem"] == "maven" and item["name"] == "org.example:core" for item in dependencies)
+
+
+def test_dependency_manifests_remain_protected_from_project_patches():
+    with pytest.raises(ProjectContractError, match="protected"):
+        ProjectPatch.from_dict({
+            "schema_version": "1.0",
+            "rationale": "Do not rewrite dependency declarations",
+            "changes": [{
+                "path": "pyproject.toml",
+                "action": "create",
+                "expected_sha256": None,
+                "content": "[project]",
+            }],
+        })
