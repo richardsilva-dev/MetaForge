@@ -201,3 +201,51 @@ def test_external_imports_are_compared_to_declared_python_dependencies(tmp_path)
     assert usage["PIL"]["confidence"] == "unresolved_mapping"
     assert ("json", "stdlib") in imports
     assert report["schema_version"] == "1.1"
+
+
+def test_static_module_contract_uses_literal_all_and_public_signatures(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    _project(root)
+    (root / "src" / "sample" / "api.py").write_text(
+        '__all__ = ["PublicAPI", "run"]\n'
+        'class PublicAPI:\n'
+        '    def execute(self, value: int) -> str:\n'
+        '        return str(value)\n'
+        '    def _internal(self):\n'
+        '        pass\n'
+        'def run(value: int = 1) -> int:\n'
+        '    return value\n'
+        'def _private():\n'
+        '    pass\n',
+        encoding="utf-8",
+    )
+
+    report = analyze_project(capture_project_snapshot(root)).to_dict()
+    contract = next(item for item in report["module_contracts"] if item["path"] == "src/sample/api.py")
+    symbol_names = {item["name"] for item in contract["public_symbols"]}
+
+    assert contract["declared_all"] is True
+    assert contract["exported_names"] == ["PublicAPI", "run"]
+    assert contract["confidence"] == "declared_static_all"
+    assert {"PublicAPI", "PublicAPI.execute", "run"} <= symbol_names
+    assert "PublicAPI._internal" not in symbol_names
+    assert "_private" not in symbol_names
+    assert report["schema_version"] == "1.2"
+
+
+def test_dynamic_all_uses_conservative_fallback_and_diagnostic(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    _project(root)
+    (root / "src" / "sample" / "api.py").write_text(
+        '__all__ = build_exports()\ndef visible():\n    return True\n',
+        encoding="utf-8",
+    )
+
+    report = analyze_project(capture_project_snapshot(root)).to_dict()
+    contract = next(item for item in report["module_contracts"] if item["path"] == "src/sample/api.py")
+
+    assert contract["confidence"] == "dynamic_all_fallback"
+    assert contract["exported_names"] == ["visible"]
+    assert any(item["code"] == "python-dynamic-all-unsupported" for item in report["diagnostics"])
