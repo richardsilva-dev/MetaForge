@@ -63,9 +63,14 @@ from metaforge.projects import (
     ProjectPatch,
     apply_patch_to_copy,
     capture_project_snapshot,
+    scan_project_secrets,
 )
 
 snapshot = capture_project_snapshot("path/to/project")
+secret_report = scan_project_secrets(snapshot)
+if secret_report.findings:
+    raise RuntimeError("Review potential secrets before using project contents")
+
 original = snapshot.file_map["src/module.py"]
 
 patch = ProjectPatch.from_dict({
@@ -89,7 +94,7 @@ print(patched_snapshot.fingerprint)
 
 The destination must not exist and must not overlap the source project. Patch operations support \`create\`, \`replace\`, and \`delete\`; replacements and deletions require the exact SHA-256 from the captured snapshot. Paths are normalized relative POSIX paths and restricted to source/documentation roots and allow-listed text extensions. The default limits are 30 files per patch, 256 KiB per file, 1 MiB total patch content, 1,000 snapshot files, and 20 MiB snapshot content.
 
-**Not implemented yet:** sending project content to an agent, secret scanning/redaction for model context, immutable project-test execution, no-network build orchestration, multi-language compiler execution of generated patches, dependency-graph analysis, and architecture-level acceptance. The project patch API only produces and verifies a disposable text-source copy; binary assets are excluded, and it does not claim that the copy builds or passes tests.
+**Not implemented yet:** sending project content to an agent, complete secret scanning/redaction for model context, immutable project-test execution, no-network build orchestration, multi-language compiler execution of generated patches, dependency-graph analysis, and architecture-level acceptance. The local secret scanner is heuristic, may miss credentials or report false positives, and is not a guarantee that files are safe to transmit. The project patch API only produces and verifies a disposable text-source copy; binary assets are excluded, and it does not claim that the copy builds or passes tests.
 
 ## Requirements and installation
 
