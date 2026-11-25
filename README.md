@@ -51,7 +51,7 @@ MetaForge currently provides two related experimental paths:
 
 Agent output is untrusted input. Agents can propose or summarize; deterministic code decides whether a candidate passes safety and correctness gates. The source-level pipeline requires both static review and a successful sandbox preflight/smoke test before model calls or candidate execution. Static analysis is defense in depth, not a security boundary.
 
-Project patch contracts are separate from the current code-evolution engine. A snapshot includes only allow-listed UTF-8 text files under `src/`, `tests/`, `docs/`, and `backends/`, plus selected root documentation files. Hidden directories, environments, caches, build outputs, binary assets, and dependency/build manifests are not included. Shell/batch scripts and build manifests are protected. Existing files under `tests/` cannot be replaced or deleted; new tests can be added. Applying a PatchSet verifies the source snapshot and expected file hashes, then creates a new directory atomically without modifying the original checkout. No project code is executed by this API.
+Project patch contracts are separate from the current code-evolution engine. A snapshot includes only allow-listed UTF-8 text files under `src/`, `tests/`, `docs/`, and `backends/`, plus selected root documentation files. Hidden directories, environments, caches, build outputs, binary assets, and dependency/build manifests are not included. Shell/batch scripts and build manifests are protected. Existing files under `tests/` cannot be replaced or deleted; new tests can be added. Applying a PatchSet verifies the source snapshot and expected file hashes, then creates a new directory atomically without modifying the original checkout. No project code is executed by this API. Hardcoded secrets inside otherwise included source files are not detected yet; do not send project files to a model until a dedicated secret-scanning/redaction layer exists.
 
 
 ## Project snapshots and PatchSets (foundation API)
@@ -89,7 +89,7 @@ print(patched_snapshot.fingerprint)
 
 The destination must not exist and must not overlap the source project. Patch operations support \`create\`, \`replace\`, and \`delete\`; replacements and deletions require the exact SHA-256 from the captured snapshot. Paths are normalized relative POSIX paths and restricted to source/documentation roots and allow-listed text extensions. The default limits are 30 files per patch, 256 KiB per file, 1 MiB total patch content, 1,000 snapshot files, and 20 MiB snapshot content.
 
-**Not implemented yet:** sending project content to an agent, secret scanning/redaction for model context, immutable project-test execution, no-network build orchestration, multi-language compiler execution of generated patches, dependency-graph analysis, and architecture-level acceptance. The project patch API only produces and verifies a disposable text-source copy; it does not claim that the copy builds or passes tests.
+**Not implemented yet:** sending project content to an agent, secret scanning/redaction for model context, immutable project-test execution, no-network build orchestration, multi-language compiler execution of generated patches, dependency-graph analysis, and architecture-level acceptance. The project patch API only produces and verifies a disposable text-source copy; binary assets are excluded, and it does not claim that the copy builds or passes tests.
 
 ## Requirements and installation
 
