@@ -11,6 +11,7 @@ from typing import Any
 
 from metaforge.agents.code_safety import StaticCodeReviewer
 from metaforge.evolution.metadata import runtime_metadata
+from metaforge.evolution.benchmark_selection import passes_baseline_gate
 from metaforge.evolution.workloads import (
     INTEGER_SORT_SUITE_NAME,
     INTEGER_SORT_SUITE_VERSION,
@@ -275,6 +276,11 @@ class CodeReplayEngine:
             if item["correctness_passed"]
             and item["candidate"].get("generation") != -1
             and item["median_algorithm_seconds"] <= baseline_score * 0.95
+            and passes_baseline_gate(
+                item["workload_results"],
+                baseline["workload_results"],
+                0.05,
+            )
         ]
         best = min(promoted, key=lambda item: item["median_algorithm_seconds"]) if promoted else baseline
         selection = {
@@ -294,7 +300,7 @@ class CodeReplayEngine:
             "run_id": uuid4().hex,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "engine": "metaforge_code_replay",
-            "engine_version": "0.8.0-dev",
+            "engine_version": "0.9.0-dev",
             "replay_of": original.get("run_id"),
             "original_created_at": original.get("created_at"),
             "environment": runtime_metadata(),
