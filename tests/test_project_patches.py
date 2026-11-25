@@ -86,6 +86,20 @@ def test_snapshot_is_deterministic_allowlisted_and_does_not_expose_absolute_root
     assert first.to_dict()["fingerprint"] == first.fingerprint
 
 
+def test_snapshot_rejects_a_symlink_as_the_project_root(tmp_path):
+    real = tmp_path / "real-project"
+    real.mkdir()
+    (real / "src").mkdir()
+    alias = tmp_path / "alias-project"
+    try:
+        alias.symlink_to(real, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlink creation is unavailable on this host")
+
+    with pytest.raises(ProjectContractError, match="real directory"):
+        capture_project_snapshot(alias)
+
+
 def test_snapshot_rejects_symlinks_inside_included_roots(tmp_path):
     root = tmp_path / "project"
     root.mkdir()
@@ -184,6 +198,14 @@ def test_patch_schema_enforces_file_count_byte_and_content_limits():
         ProjectPatch.from_dict(
             patch_dict({"path": "src/pkg/a.py", "action": "create", "content": "x\x00y"})
         )
+    with pytest.raises(ProjectContractError, match="total-content"):
+        ProjectPatch.from_dict(
+            patch_dict(
+                {"path": "src/pkg/a.py", "action": "create", "content": "a" * 600},
+                {"path": "src/pkg/b.py", "action": "create", "content": "b" * 600},
+            ),
+            ProjectPolicy(max_patch_bytes=1_024),
+        )
     with pytest.raises(ProjectContractError):
         ProjectPolicy(max_patch_files=True)
 
@@ -196,6 +218,21 @@ def test_patch_contract_requires_precondition_hash_for_replace_and_delete():
                 "action": action,
                 "content": "x = 1\n" if action == "replace" else None,
             }))
+
+
+def test_patch_rejects_case_collisions_with_existing_source_files(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    make_project(root)
+    snapshot = capture_project_snapshot(root)
+    patch = ProjectPatch.from_dict(patch_dict({
+        "path": "src/PKG/module.py",
+        "action": "create",
+        "content": "def value(): return 9\\n",
+    }))
+
+    with pytest.raises(ProjectContractError, match="already exists"):
+        validate_patch_against_snapshot(snapshot, patch)
 
 
 def test_patch_can_only_add_tests_and_cannot_rewrite_existing_acceptance_tests(tmp_path):
