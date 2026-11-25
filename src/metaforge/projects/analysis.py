@@ -69,6 +69,23 @@ class ManifestDependency:
                 "group": self.group, "source": self.source}
 
 @dataclass(frozen=True, slots=True)
+class DeclaredEntryPoint:
+    manifest_path: str
+    ecosystem: str
+    name: str
+    target: str
+    kind: str
+    module: str | None
+    symbol: str | None
+    resolution: str
+    resolved_path: str | None
+    def to_dict(self) -> dict[str, Any]:
+        return {"manifest_path": self.manifest_path, "ecosystem": self.ecosystem,
+                "name": self.name, "target": self.target, "kind": self.kind,
+                "module": self.module, "symbol": self.symbol,
+                "resolution": self.resolution, "resolved_path": self.resolved_path}
+
+@dataclass(frozen=True, slots=True)
 class ExternalDependencyUsage:
     import_name: str
     occurrences: tuple[dict[str, Any], ...]
@@ -108,9 +125,10 @@ class ProjectAnalysis:
     dependency_manifests: tuple[ManifestDependency, ...]
     external_dependency_usage: tuple[ExternalDependencyUsage, ...]
     module_contracts: tuple[ProjectModuleContract, ...]
+    declared_entry_points: tuple[DeclaredEntryPoint, ...]
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": "1.2", "snapshot_fingerprint": self.snapshot_fingerprint,
+            "schema_version": "1.3", "snapshot_fingerprint": self.snapshot_fingerprint,
             "files_analyzed": self.files_analyzed, "language_counts": dict(self.language_counts),
             "modules": [x.to_dict() for x in self.modules],
             "imports": [x.to_dict() for x in self.imports],
@@ -120,11 +138,13 @@ class ProjectAnalysis:
             "dependency_manifests": [item.to_dict() for item in self.dependency_manifests],
             "external_dependency_usage": [item.to_dict() for item in self.external_dependency_usage],
             "module_contracts": [item.to_dict() for item in self.module_contracts],
+            "declared_entry_points": [item.to_dict() for item in self.declared_entry_points],
             "analysis_scope": {"static_only": True, "executed_project_code": False,
                 "python_ast": True, "other_languages": "file inventory only; dedicated parsers are future work",
                 "manifest_inventory": "explicit root allow-list; declarations only; no resolution, installation, or execution",
                 "external_dependency_matching": "Python top-level import names compared to normalized declared distribution names; exact-name heuristic only",
-                "public_api_contracts": "literal __all__ when available; otherwise inferred public definitions; dynamic exports are warnings"},
+                "public_api_contracts": "literal __all__ when available; otherwise inferred public definitions; dynamic exports are warnings",
+                "declared_entry_points": "manifest declarations; Python module and symbol resolution is static only"},
         }
 
 def _module_name(path: str) -> str | None:
