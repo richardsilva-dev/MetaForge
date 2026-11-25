@@ -268,7 +268,8 @@ def test_manifest_declared_python_entrypoints_resolve_modules_and_symbols(tmp_pa
         '[project]\nname = "sample"\n'
         '[project.scripts]\nsample-cli = "sample.cli:main"\n'
         'missing-cli = "sample.missing:main"\n'
-        'missing-symbol = "sample.cli:missing"\n',
+        'missing-symbol = "sample.cli:missing"\n'
+        'package-cli = "sample:calculate"\n',
         encoding="utf-8",
     )
 
@@ -279,6 +280,8 @@ def test_manifest_declared_python_entrypoints_resolve_modules_and_symbols(tmp_pa
     assert entries["sample-cli"]["resolved_path"] == "src/sample/cli.py"
     assert entries["missing-cli"]["resolution"] == "module_not_found"
     assert entries["missing-symbol"]["resolution"] == "symbol_not_found"
+    assert entries["package-cli"]["resolution"] == "resolved"
+    assert entries["package-cli"]["resolved_path"] == "src/sample/__init__.py"
     assert any(item["kind"] == "declared_console_script" and item["path"] == "src/sample/cli.py"
                for item in report["dependency_graph"]["entry_points"])
     assert report["schema_version"] == "1.3"
