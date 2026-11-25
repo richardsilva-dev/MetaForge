@@ -161,3 +161,18 @@ def test_dependency_manifests_remain_protected_from_project_patches():
                 "content": "[project]",
             }],
         })
+
+
+def test_manifest_parser_recursion_error_is_reported(tmp_path, monkeypatch):
+    root = tmp_path / "project"
+    root.mkdir()
+    _project(root)
+    (root / "package.json").write_text("{}", encoding="utf-8")
+
+    def fail_recursively(_value):
+        raise RecursionError("parser recursion limit")
+
+    monkeypatch.setattr("metaforge.projects.analysis.json.loads", fail_recursively)
+    report = analyze_project(capture_project_snapshot(root)).to_dict()
+
+    assert any(item["code"] == "dependency-manifest-parse-error" for item in report["diagnostics"])
