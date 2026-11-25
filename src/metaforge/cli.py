@@ -333,7 +333,7 @@ def main() -> int:
                 },
             }
             args.output.parent.mkdir(parents=True, exist_ok=True)
-            args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+            args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         except Exception as exc:
             parser.error(f"project test execution stopped safely: {type(exc).__name__}: {exc}")
         print(f"Execution supported: {execution.supported}")
