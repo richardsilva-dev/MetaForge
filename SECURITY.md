@@ -39,7 +39,7 @@ The scanner is a best-effort filter, not a complete secret detector. It can prod
 - CPU and memory limits do not eliminate all denial-of-service risks against the host or container daemon.
 - Timing measurements may be noisy and do not establish general performance improvements without representative workloads and controlled repeated trials.
 - Current model-generated source support is Python-only and restricted to integer sorting. The structured multilingual PatchSet foundation is not yet connected to agents and does not yet implement repository-wide refactoring.
-- The snapshot captures only allow-listed UTF-8 text paths; binary assets and excluded directories are not copied. It does not currently detect hardcoded secrets inside included source files. Do not send project content to a model until a secret-scanning/redaction stage has been implemented and reviewed.
+- The snapshot captures only allow-listed UTF-8 text paths; binary assets and excluded directories are not copied. The optional scanner covers common secret patterns but can miss credentials. A clean scan is not authorization to transmit project content to a model.
 - The patcher validates file operations but does not prove that the resulting copy builds, passes tests, preserves behavior, or is secure. There is no project-level test/build sandbox integration yet.
 - The C11 and Rust backends execute trusted repository source; they do not accept generated native programs.
 
