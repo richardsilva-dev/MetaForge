@@ -37,7 +37,7 @@ The scanner is a best-effort filter, not a complete secret detector. It can prod
 - AST review is not a proof that Python code is safe. Python's dynamic object model makes static allow-lists inherently incomplete.
 - A rootless container is a defense-in-depth boundary, not a formal proof against container-runtime, kernel, WSL, hypervisor, or host vulnerabilities.
 - CPU and memory limits do not eliminate all denial-of-service risks against the host or container daemon.
-- Timing measurements may be noisy and do not establish general performance improvements without representative workloads and controlled repeated trials.
+- Timing measurements may be noisy and do not establish general performance improvements without representative workloads and controlled repeated trials. Evolutionary selection is provisional; a separate replay run must clear the same baseline, per-workload regression, MAD-spread, and minimum-repeat gates. Replay is a fresh execution, not proof of independence from the same host or hardware.
 - Current model-generated source support is Python-only and restricted to integer sorting. The structured multilingual PatchSet foundation is not yet connected to agents and does not yet implement repository-wide refactoring.
 - The snapshot captures only allow-listed UTF-8 text paths; binary assets and excluded directories are not copied. The optional scanner covers common secret patterns but can miss credentials. A clean scan is not authorization to transmit project content to a model.
 - The patcher validates file operations but does not prove that the resulting copy builds, passes tests, preserves behavior, or is secure. There is no project-level test/build sandbox integration yet.
