@@ -111,7 +111,7 @@ def test_snapshot_rejects_symlinks_inside_included_roots(tmp_path):
     except (OSError, NotImplementedError):
         pytest.skip("Symlink creation is unavailable on this host")
 
-    with pytest.raises(ProjectContractError, match="Symlinks are forbidden"):
+    with pytest.raises(ProjectContractError, match="Symlinks.*forbidden"):
         capture_project_snapshot(root)
 
 
