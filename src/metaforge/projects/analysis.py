@@ -125,7 +125,7 @@ def _parse_python(path: str, raw: bytes, known: set[str]):
 
 
 def _has_main_guard(tree: ast.AST) -> bool:
-    for node in ast.walk(tree):
+    for node in tree.body:
         if not isinstance(node, ast.If):
             continue
         test = node.test
