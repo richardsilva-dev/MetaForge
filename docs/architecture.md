@@ -57,3 +57,14 @@ It records declared dependency names, version requirements, and manifest groups.
 It does not install packages, execute build scripts, contact registries, or claim that
 a declaration is a resolved dependency graph. Manifest files remain protected from
 project patch operations.
+
+
+### External dependency consistency
+
+Python import roots are classified as local, standard-library, external-or-unresolved,
+or unresolved-relative. External import roots are compared with declared Python
+distribution names using normalized exact-name matching only. A match is evidence of
+a matching declaration, not proof of installation or runtime availability. A missing
+match is not proof of an undeclared dependency because distribution names and import
+names can differ, namespace packages can span distributions, and dynamic imports are
+not fully visible to static AST analysis. No package resolution or installation occurs.
