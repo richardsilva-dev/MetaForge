@@ -25,7 +25,7 @@ class SecretFinding:
             raise ProjectContractError("Secret finding line must be a positive integer")
         if not isinstance(self.rule_id, str) or not self.rule_id:
             raise ProjectContractError("Secret finding rule_id must be non-empty text")
-        if self.severity not in {"high", "medium"}:
+        if not isinstance(self.severity, str) or self.severity not in {"high", "medium"}:
             raise ProjectContractError("Secret finding severity must be high or medium")
 
     def to_dict(self) -> dict[str, Any]:
@@ -62,7 +62,11 @@ class SecretScanReport:
 
     @property
     def no_detected_secrets(self) -> bool:
-        return not self.findings and not self.findings_truncated
+        return (
+            self.files_scanned > 0
+            and not self.findings
+            and not self.findings_truncated
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
