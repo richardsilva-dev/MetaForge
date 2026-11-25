@@ -21,8 +21,6 @@ def test_analysis_is_static_deterministic_and_builds_import_graph(tmp_path):
     assert result == analyze_project(snapshot)
     report = result.to_dict()
     assert report["analysis_scope"]["executed_project_code"] is False
-    assert "secret" not in str(dependencies)
-    assert any(item["name"] == "private-lib" and item["requirement"] == "[direct-reference-redacted]" for item in dependencies)
     assert report["language_counts"] == {"python": 3, "rust": 1}
     assert any(x["target"] == "sample.models" and x["resolution"] == "local" for x in report["imports"])
     assert any(x["source_path"] == "src/sample/__init__.py" and x["target"] == "sample.service" for x in report["imports"])
@@ -118,6 +116,8 @@ def test_analysis_inventories_root_dependency_manifests_without_execution(tmp_pa
     assert any(item["name"] == "requests" and item["group"] == "runtime" for item in dependencies)
     assert any(item["name"] == "pytest" and item["group"] == "optional:dev" for item in dependencies)
     assert report["analysis_scope"]["executed_project_code"] is False
+    assert "secret" not in str(dependencies)
+    assert any(item["name"] == "private-lib" and item["requirement"] == "[direct-reference-redacted]" for item in dependencies)
 
 
 def test_malformed_dependency_manifest_is_reported_without_aborting(tmp_path):
