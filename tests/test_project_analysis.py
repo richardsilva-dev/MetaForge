@@ -46,3 +46,11 @@ def test_analysis_never_executes_project_source(tmp_path):
         f"from pathlib import Path\nPath({str(marker)!r}).write_text('executed')\n", encoding="utf-8")
     analyze_project(capture_project_snapshot(root))
     assert not marker.exists()
+
+
+def test_unresolved_relative_import_is_not_reported_as_local(tmp_path):
+    root = tmp_path / "project"; root.mkdir(); _project(root)
+    (root / "src" / "sample" / "service.py").write_text("from .missing import Thing\\n", encoding="utf-8")
+    report = analyze_project(capture_project_snapshot(root)).to_dict()
+    edge = next(x for x in report["imports"] if x["target"] == "sample.missing")
+    assert edge["resolution"] == "external_or_unresolved"
