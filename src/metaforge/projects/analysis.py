@@ -257,7 +257,7 @@ def _module_contract(path: str, tree: ast.Module,
                 bound_name = alias.asname or alias.name.split(".", 1)[0]
                 if not bound_name.startswith("_"):
                     reexports.add(bound_name)
-        elif isinstance(node, ast.ImportFrom):
+        elif isinstance(node, ast.ImportFrom) and node.module != "__future__":
             for alias in node.names:
                 if alias.name == "*":
                     wildcard_reexport = True
