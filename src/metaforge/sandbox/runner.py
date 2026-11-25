@@ -15,8 +15,41 @@ from typing import Any
 from metaforge.sandbox.policy import SandboxPolicy
 
 
+_WORKER_SOURCE = r"""
+import json, runpy, sys
+
+_trusted_system_exit = SystemExit
+_trusted_json_dumps = json.dumps
+_trusted_stdout_write = sys.stdout.write
+_trusted_type = type
+_trusted_any = any
+_trusted_callable = callable
+_trusted_list_type = list
+_trusted_int_type = int
+
+def fail(code):
+    raise _trusted_system_exit(code)
+
+with open(sys.argv[2], encoding="utf-8") as handle:
+    payload = json.load(handle)
+values = payload["values"]
+namespace = runpy.run_path(sys.argv[1], run_name="metaforge_candidate")
+solve = namespace.get("solve")
+if not _trusted_callable(solve):
+    fail(30)
+result = solve(values.copy())
+if _trusted_type(result) is not _trusted_list_type or _trusted_any(
+    _trusted_type(value) is not _trusted_int_type for value in result
+):
+    fail(31)
+_trusted_stdout_write(_trusted_json_dumps(
+    {"output": result}, separators=(",", ":")
+) + "\n")
+
+"""
+
 _RUNNER_SOURCE = r"""
-import json, os, resource, runpy, socket, sys, time
+import json, os, resource, socket, subprocess, sys, time
 
 _trusted_system_exit = SystemExit
 
@@ -87,51 +120,96 @@ def verify_sandbox():
     else:
         fail(22)
 
-if sys.argv[4] == "1":
+if sys.argv[5] == "1":
     verify_sandbox()
 
-# Capture trusted primitives before loading untrusted candidate code. A candidate
-# can mutate shared Python modules and builtins during module initialization.
+# The trusted supervisor never imports or executes candidate code.
+# Each sample runs in a fresh child interpreter; only this clock is trusted.
 _trusted_clock = time.perf_counter_ns
-_trusted_json_dumps = json.dumps
+_trusted_json_loads = json.loads
 _trusted_stdout_write = sys.stdout.write
 _trusted_sorted = sorted
-_trusted_isinstance = isinstance
 _trusted_type = type
 _trusted_any = any
-_trusted_max = max
-_trusted_callable = callable
 _trusted_list_type = list
 _trusted_int_type = int
 _trusted_range = range
-_trusted_int = int
+_trusted_monotonic = time.monotonic
+_trusted_popen = subprocess.Popen
+_trusted_killpg = os.killpg
+_trusted_process_lookup_error = ProcessLookupError
 
 with open(sys.argv[2], encoding="utf-8") as handle:
     payload = json.load(handle)
 values = payload["values"]
-repeat_count = _trusted_int(sys.argv[3])
+repeat_count = int(sys.argv[4])
+child_timeout = float(sys.argv[6])
+max_output_bytes = int(sys.argv[7])
 expected = _trusted_sorted(values)
-namespace = runpy.run_path(sys.argv[1], run_name="metaforge_candidate")
-solve = namespace.get("solve")
-if not _trusted_callable(solve):
-    fail(30)
+deadline = _trusted_monotonic() + child_timeout
 samples_ns = []
 result = None
+child_env = {
+    "PATH": os.environ.get("PATH", ""),
+    "PYTHONHASHSEED": "0",
+    "PYTHONIOENCODING": "utf-8",
+}
+
 for _ in _trusted_range(repeat_count):
-    sample = values.copy()
+    remaining = deadline - _trusted_monotonic()
+    if remaining <= 0:
+        fail(33)
     started = _trusted_clock()
-    result = solve(sample)
-    elapsed = _trusted_clock() - started
+    try:
+        child = _trusted_popen(
+            [sys.executable, "-I", "-B", sys.argv[3], sys.argv[1], sys.argv[2]],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=child_env,
+            cwd="/workspace",
+            start_new_session=True,
+        )
+        try:
+            child_stdout, child_stderr = child.communicate(timeout=remaining)
+        except subprocess.TimeoutExpired:
+            try:
+                _trusted_killpg(child.pid, 9)
+            except (OSError, _trusted_process_lookup_error):
+                pass
+            child_stdout, child_stderr = child.communicate()
+            fail(34)
+        elapsed = _trusted_clock() - started
+        try:
+            _trusted_killpg(child.pid, 9)
+        except (OSError, _trusted_process_lookup_error):
+            pass
+    except OSError:
+        fail(35)
+
+    if child.returncode != 0:
+        fail(36)
+    if len(child_stdout) > max_output_bytes or len(child_stderr) > 65_536:
+        fail(37)
+    try:
+        child_payload = _trusted_json_loads(child_stdout.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        fail(38)
+    if not isinstance(child_payload, dict) or set(child_payload) != {"output"}:
+        fail(39)
+    result = child_payload["output"]
     if _trusted_type(result) is not _trusted_list_type or _trusted_any(
         _trusted_type(value) is not _trusted_int_type for value in result
     ):
-        fail(31)
+        fail(40)
     if result != expected:
-        fail(32)
-    samples_ns.append(_trusted_max(0, elapsed))
-_trusted_stdout_write(_trusted_json_dumps(
+        fail(41)
+    samples_ns.append(max(0, elapsed))
+
+_trusted_stdout_write(json.dumps(
     {"output": result, "samples_ns": samples_ns}, separators=(",", ":")
 ) + "\n")
+
 """
 
 
@@ -245,7 +323,7 @@ class SandboxRunner:
         smoke_probe: bool = False,
     ) -> SandboxResult:
         started = time.perf_counter()
-        scope = "rootless_container_internal_algorithm_perf_counter_ns"
+        scope = "rootless_container_external_candidate_process_wall_time_including_startup"
         if not isinstance(source_code, str):
             return SandboxResult(False, None, time.perf_counter() - started, scope, "Source must be text")
         try:
@@ -295,6 +373,8 @@ class SandboxRunner:
             input_path.write_text(json.dumps({"values": values}, separators=(",", ":")), encoding="utf-8")
             runner_path = workspace / "runner.py"
             runner_path.write_text(_RUNNER_SOURCE, encoding="utf-8")
+            worker_path = workspace / "candidate_worker.py"
+            worker_path.write_text(_WORKER_SOURCE, encoding="utf-8")
             workspace.chmod(0o755)
             cid_directory = tempfile.TemporaryDirectory(prefix="metaforge-cid-")
             cid_file = Path(cid_directory.name) / "container.id"
@@ -310,8 +390,9 @@ class SandboxRunner:
                 f"--tmpfs=/tmp:rw,noexec,nosuid,nodev,size={self.policy.tmpfs_mb}m,mode=1777",
                 f"--mount={mount}", "--workdir=/workspace", "--entrypoint=python",
                 preparation.image, "-I", "-B", "/workspace/runner.py",
-                "/workspace/candidate.py", "/workspace/input.json", str(repeats),
-                "1" if smoke_probe else "0",
+                "/workspace/candidate.py", "/workspace/input.json", "/workspace/candidate_worker.py",
+                str(repeats), "1" if smoke_probe else "0", str(local_timeout),
+                str(self.policy.max_output_bytes),
             ]
             stdout = bytearray()
             stderr = bytearray()
