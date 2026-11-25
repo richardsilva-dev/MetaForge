@@ -32,6 +32,8 @@ MetaForge has two separate evaluation paths.
 - A container is not a proof against kernel/runtime vulnerabilities or container escapes. Use a dedicated isolated host or VM for high-risk research.
 - The static AST reviewer is not a sandbox and must never be treated as one.
 - Project snapshots cap both included file count/bytes and the total number of directory entries traversed, including non-text and ignored entries, to bound traversal work and memory.
+- Project snapshots also cap traversal depth at 64 nested directories by default (configurable up to 256), reject detected mount points and cross-device boundaries inside allow-listed roots, and recheck device identity on secure file opens.
+- Device IDs plus the platform mount-point check do not detect every same-device bind mount on every platform; Windows path traversal also has weaker race resistance than POSIX descriptor-relative traversal.
 - The worker seccomp filter is a targeted denylist, not a complete syscall allow-list or proof against kernel/runtime vulnerabilities. The supervisor and worker still share a container UID; CPU, memory, PID, and wall-clock limits remain necessary to bound denial-of-service attempts.
 - Python tracemalloc does not measure total process memory. The source-level sandbox enforces a cgroup memory ceiling but does not yet report reliable per-candidate peak memory.
 - Source-level performance is measured only for Python candidates in the same pinned runtime/image. Do not compare those samples directly with C/Rust backend timings.
