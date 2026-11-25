@@ -11,6 +11,7 @@ from metaforge.projects.models import (
     SnapshotFile,
 )
 from metaforge.projects.patches import apply_patch_to_copy, validate_patch_against_snapshot
+from metaforge.projects.review import compare_project_analyses, review_project_patch
 from metaforge.projects.snapshot import capture_project_snapshot
 from metaforge.projects.secrets import (
     SecretFinding,
@@ -44,4 +45,6 @@ __all__ = [
     "apply_patch_to_copy",
     "capture_project_snapshot",
     "validate_patch_against_snapshot",
+    "compare_project_analyses",
+    "review_project_patch",
 ]
