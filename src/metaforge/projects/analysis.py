@@ -218,8 +218,10 @@ def _parse_python(path: str, raw: bytes, known: set[str]):
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name == "importlib" or alias.name == "importlib.util":
+                if alias.name == "importlib":
                     importlib_aliases.add(alias.asname or "importlib")
+                elif alias.name == "importlib.util" and alias.asname is None:
+                    importlib_aliases.add("importlib")
         elif isinstance(node, ast.ImportFrom) and node.module == "importlib":
             for alias in node.names:
                 if alias.name == "import_module":
@@ -238,7 +240,8 @@ def _parse_python(path: str, raw: bytes, known: set[str]):
         if not is_dynamic_import:
             continue
         target = _literal_string(node.args[0]) if node.args else None
-        if target is None:
+        if (target is None or len(target) > 512
+                or re.fullmatch(r"\\.*[A-Za-z_]\\w*(?:\\.[A-Za-z_]\\w*)*", target) is None):
             diagnostics.append({"path": path, "code": "python-dynamic-import-unresolved",
                                 "severity": "warning", "line": node.lineno})
             continue
