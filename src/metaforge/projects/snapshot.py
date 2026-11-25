@@ -33,6 +33,19 @@ def _read_relative_regular_file(
     max_bytes: int | None = None,
 ) -> bytes:
     """Open each path component relative to a root descriptor without following symlinks."""
+    root = Path(root)
+    try:
+        root_metadata = root.lstat()
+    except OSError as exc:
+        raise ProjectContractError("Snapshot root is unavailable during file access") from exc
+    if _is_symlink_or_reparse_point(root_metadata) or not stat.S_ISDIR(root_metadata.st_mode):
+        raise ProjectContractError("Snapshot root is no longer a real directory")
+    try:
+        if root.resolve(strict=True) != root:
+            raise ProjectContractError("Snapshot root contains a symlinked or junction parent")
+    except OSError as exc:
+        raise ProjectContractError("Snapshot root cannot be resolved safely") from exc
+
     parts = relative_path.split("/")
     if not parts or any(part in {"", ".", ".."} or "\\\\" in part or ":" in part for part in parts):
         raise ProjectContractError("Snapshot path is not a safe relative path")
