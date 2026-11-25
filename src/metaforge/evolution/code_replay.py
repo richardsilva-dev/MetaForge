@@ -12,7 +12,9 @@ from typing import Any
 from metaforge.agents.code_safety import StaticCodeReviewer
 from metaforge.evolution.metadata import runtime_metadata
 from metaforge.evolution.benchmark_selection import (
+    DEFAULT_MINIMUM_IMPROVEMENT_RATIO,
     MINIMUM_PROMOTION_REPEATS,
+    TRUSTED_BASELINE_SOURCE,
     passes_baseline_gate,
 )
 from metaforge.evolution.workloads import (
@@ -294,13 +296,13 @@ class CodeReplayEngine:
             and passes_baseline_gate(
                 item["workload_results"],
                 baseline["workload_results"],
-                0.05,
+                DEFAULT_MINIMUM_IMPROVEMENT_RATIO,
             )
         ]
         best = min(promoted, key=lambda item: item["median_algorithm_seconds"]) if promoted else baseline
         selection = {
             "policy": "baseline_gated_minimum_relative_improvement",
-            "minimum_improvement_ratio": 0.05,
+            "minimum_improvement_ratio": DEFAULT_MINIMUM_IMPROVEMENT_RATIO,
             "minimum_repeats_for_promotion": MINIMUM_PROMOTION_REPEATS,
             "baseline_median_seconds": baseline_score,
             "selected_median_seconds": best["median_algorithm_seconds"],
