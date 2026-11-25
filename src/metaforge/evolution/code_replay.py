@@ -153,14 +153,22 @@ class CodeReplayEngine:
         }
 
         deadline = time.monotonic() + self.global_timeout_seconds
-        preparation: SandboxPreparation = self.sandbox_runner.prepare()
-        if not preparation.rootless:
+        preparation = self.sandbox_runner.prepare()
+        if not isinstance(preparation, SandboxPreparation) or not preparation.rootless:
             raise RuntimeError("Code replay requires a verified rootless sandbox runtime")
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise RuntimeError("Global time budget exhausted during sandbox preflight")
         smoke = self.sandbox_runner.smoke(timeout_seconds=remaining)
-        if not isinstance(smoke, SandboxResult) or not smoke.success or len(smoke.algorithm_samples_seconds) != 2:
+        if (
+            not isinstance(smoke, SandboxResult)
+            or not smoke.success
+            or len(smoke.algorithm_samples_seconds) != 2
+            or any(
+                type(value) not in (int, float) or not math.isfinite(value) or value <= 0
+                for value in smoke.algorithm_samples_seconds
+            )
+        ):
             raise RuntimeError("Rootless sandbox smoke failed; replay is blocked")
 
         results: list[dict[str, Any]] = []
