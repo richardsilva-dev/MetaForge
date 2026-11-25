@@ -210,6 +210,8 @@ def test_static_module_contract_uses_literal_all_and_public_signatures(tmp_path)
     (root / "src" / "sample" / "api.py").write_text(
         '__all__ = ["PublicAPI", "run"]\n'
         'class PublicAPI:\n'
+        '    def __init__(self, value: int):\n'
+        '        self.value = value\n'
         '    def execute(self, value: int) -> str:\n'
         '        return str(value)\n'
         '    def _internal(self):\n'
