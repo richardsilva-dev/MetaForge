@@ -7,13 +7,19 @@ import statistics
 import time
 from datetime import datetime, timezone
 from uuid import uuid4
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from metaforge.agents.code_safety import CodeReviewResult, StaticCodeReviewer
 from metaforge.agents.contracts import AgentResult, AgentTask
 from metaforge.sandbox.runner import SandboxPreparation, SandboxResult, SandboxRunner
 from metaforge.evolution.metadata import runtime_metadata
+from metaforge.evolution.workloads import (
+    INTEGER_SORT_SUITE_NAME,
+    INTEGER_SORT_SUITE_VERSION,
+    INTEGER_SORT_WORKLOAD_NAMES,
+    build_integer_sort_workloads,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +68,7 @@ class CodeEvaluation:
     algorithm_samples_seconds: tuple[float, ...]
     median_algorithm_seconds: float | None
     container_wall_seconds: float | None
+    workload_results: dict[str, dict[str, Any]] = field(default_factory=dict)
     error: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -77,12 +84,13 @@ class CodeEvaluation:
             "algorithm_samples_seconds": list(self.algorithm_samples_seconds),
             "median_algorithm_seconds": self.median_algorithm_seconds,
             "container_wall_seconds": self.container_wall_seconds,
+            "workload_results": self.workload_results,
             "error": self.error,
         }
 
 
 class CodeEvolutionEngine:
-    """Generate, statically review, and sandbox-evaluate Python algorithm source."""
+    """Generate, review, and sandbox-evaluate Python sorting source across workloads."""
 
     def __init__(
         self,
@@ -125,11 +133,103 @@ class CodeEvolutionEngine:
         payload = json.dumps(dataset, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(payload).hexdigest()
 
+    def _evaluate_candidate(
+        self,
+        candidate: CodeCandidate,
+        review: CodeReviewResult,
+        workloads: dict[str, list[int]],
+        deadline: float,
+    ) -> CodeEvaluation:
+        workload_results: dict[str, dict[str, Any]] = {}
+        all_samples: list[float] = []
+        workload_medians: list[float] = []
+        wall_seconds = 0.0
+
+        for name, values in workloads.items():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return CodeEvaluation(
+                    candidate, review, False, tuple(all_samples), None,
+                    wall_seconds, workload_results,
+                    "Global time budget exhausted before all workloads completed",
+                )
+            try:
+                result = self.sandbox_runner.run_python(
+                    candidate.source_code,
+                    values,
+                    timeout_seconds=remaining,
+                    repeats=self.repeats,
+                )
+            except Exception as exc:
+                return CodeEvaluation(
+                    candidate, review, False, tuple(all_samples), None,
+                    wall_seconds, workload_results,
+                    f"Sandbox runner failed for workload '{name}': {type(exc).__name__}",
+                )
+            if not isinstance(result, SandboxResult):
+                return CodeEvaluation(
+                    candidate, review, False, tuple(all_samples), None,
+                    wall_seconds, workload_results,
+                    f"Sandbox returned an invalid result type for workload '{name}'",
+                )
+
+            wall_seconds += result.wall_seconds
+            samples = result.algorithm_samples_seconds
+            samples_valid = (
+                len(samples) == self.repeats
+                and all(
+                    type(value) in (int, float) and math.isfinite(value) and value >= 0
+                    for value in samples
+                )
+            )
+            expected = sorted(values)
+            if not result.success or result.output != expected or not samples_valid:
+                error = result.error or (
+                    f"Correctness or timing validation failed for workload '{name}'"
+                )
+                workload_results[name] = {
+                    "correctness_passed": False,
+                    "algorithm_samples_seconds": list(samples) if samples_valid else [],
+                    "median_algorithm_seconds": (
+                        statistics.median(samples) if samples_valid else None
+                    ),
+                    "container_wall_seconds": result.wall_seconds,
+                    "error": error,
+                }
+                return CodeEvaluation(
+                    candidate, review, False, tuple(all_samples), None,
+                    wall_seconds, workload_results,
+                    f"Workload '{name}' failed: {error}",
+                )
+
+            median = statistics.median(samples)
+            all_samples.extend(samples)
+            workload_medians.append(median)
+            workload_results[name] = {
+                "correctness_passed": True,
+                "algorithm_samples_seconds": list(samples),
+                "median_algorithm_seconds": median,
+                "container_wall_seconds": result.wall_seconds,
+                "error": None,
+            }
+
+        # Equal weight per workload prevents a workload's cardinality or
+        # sample count from dominating the aggregate score.
+        aggregate_median = statistics.median(workload_medians)
+        return CodeEvaluation(
+            candidate, review, True, tuple(all_samples), aggregate_median,
+            wall_seconds, workload_results, None,
+        )
+
     def run(self, dataset: list[int]) -> dict[str, Any]:
         if not isinstance(dataset, list) or len(dataset) > 100_000:
             raise ValueError("dataset must be a list with at most 100000 integers")
         if any(type(value) is not int or not -(2**63) <= value < 2**63 for value in dataset):
             raise ValueError("dataset must contain signed 64-bit integers")
+        workloads = build_integer_sort_workloads(dataset)
+        workload_digests = {
+            name: self._dataset_digest(values) for name, values in workloads.items()
+        }
 
         # Fail closed before spending model tokens or accepting source proposals.
         deadline = time.monotonic() + self.global_timeout_seconds
@@ -170,12 +270,19 @@ class CodeEvolutionEngine:
                     "proposal_index": proposal_index,
                     "seed": self.seed,
                     "dataset_size": len(dataset),
+                    "benchmark_suite": INTEGER_SORT_SUITE_NAME,
+                    "benchmark_suite_version": INTEGER_SORT_SUITE_VERSION,
+                    "benchmark_workloads": list(INTEGER_SORT_WORKLOAD_NAMES),
                     "max_source_bytes": 50_000,
                     "allowed_imports": [
                         "heapq", "bisect", "math", "operator", "collections",
                         "itertools", "functools", "array", "typing",
                     ],
-                    "contract": "Define a pure solve(values) function returning a sorted list of signed 64-bit integers.",
+                    "contract": (
+                        "Define a pure solve(values) function returning a sorted list of signed "
+                        "64-bit integers. It must remain correct and efficient across every "
+                        "named benchmark workload, not only the original input ordering."
+                    ),
                     "parent_source": parent.candidate.source_code if parent else None,
                     "parent_fingerprint": parent.candidate.fingerprint if parent else None,
                     "parent_median_algorithm_seconds": parent.median_algorithm_seconds if parent else None,
@@ -184,9 +291,9 @@ class CodeEvolutionEngine:
                 task = AgentTask(
                     task_id=f"code-generation-g{generation}-p{proposal_index}",
                     objective=(
-                        "Generate an initial correct sorting implementation."
+                        "Generate an initial correct sorting implementation robust across the benchmark suite."
                         if parent is None else
-                        "Mutate the parent sorting implementation while preserving correctness and seeking lower runtime."
+                        "Mutate the parent sorting implementation while preserving correctness and seeking lower aggregate runtime across all benchmark workloads."
                     ),
                     payload=payload,
                 )
@@ -258,50 +365,10 @@ class CodeEvolutionEngine:
                 if not review.approved:
                     continue
 
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    stop_reason = "global_timeout"
-                    break
-                try:
-                    result = self.sandbox_runner.run_python(
-                        source_code,
-                        dataset,
-                        timeout_seconds=remaining,
-                        repeats=self.repeats,
-                    )
-                except Exception as exc:
-                    evaluations.append(CodeEvaluation(
-                        candidate, review, False, (), None, None,
-                        f"Sandbox runner failed: {type(exc).__name__}",
-                    ))
-                    continue
-                if not isinstance(result, SandboxResult):
-                    evaluations.append(CodeEvaluation(
-                        candidate, review, False, (), None, None,
-                        "Sandbox returned an invalid result type",
-                    ))
-                    continue
-                samples = result.algorithm_samples_seconds
-                samples_valid = (
-                    len(samples) == self.repeats
-                    and all(
-                        type(value) in (int, float) and math.isfinite(value) and value >= 0
-                        for value in samples
-                    )
-                )
-                if result.success and result.output == sorted(dataset) and samples_valid:
-                    median = statistics.median(samples)
-                    evaluation = CodeEvaluation(
-                        candidate, review, True, samples,
-                        median, result.wall_seconds, None,
-                    )
-                    evaluations.append(evaluation)
+                evaluation = self._evaluate_candidate(candidate, review, workloads, deadline)
+                evaluations.append(evaluation)
+                if evaluation.success:
                     all_valid.append(evaluation)
-                else:
-                    error = result.error or "Sandbox returned invalid timing samples"
-                    evaluations.append(CodeEvaluation(
-                        candidate, review, False, (), None, result.wall_seconds, error,
-                    ))
                 if time.monotonic() >= deadline:
                     stop_reason = "global_timeout"
                     break
@@ -330,16 +397,23 @@ class CodeEvolutionEngine:
             if item.median_algorithm_seconds is not None else float("inf"),
         ) if all_valid else None
         return {
-            "schema_version": "1.0",
+            "schema_version": "1.1",
             "run_id": uuid4().hex,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "engine_version": "0.7.0-dev",
+            "engine_version": "0.8.0-dev",
             "environment": runtime_metadata(),
             "engine": "metaforge_code_evolution",
             "problem": "integer_sort",
             "seed": self.seed,
             "dataset_size": len(dataset),
             "dataset_sha256": self._dataset_digest(dataset),
+            "benchmark": {
+                "suite": INTEGER_SORT_SUITE_NAME,
+                "suite_version": INTEGER_SORT_SUITE_VERSION,
+                "aggregation": "median_of_workload_medians_equal_weight",
+                "workload_names": list(INTEGER_SORT_WORKLOAD_NAMES),
+                "workload_sha256": workload_digests,
+            },
             "generations": history,
             "best_candidate": best.to_dict() if best else None,
             "budget": {
@@ -348,6 +422,7 @@ class CodeEvolutionEngine:
                 "population_size": self.population_size,
                 "generations_requested": self.generations,
                 "repeats": self.repeats,
+                "workload_count": len(workloads),
                 "global_timeout_seconds": self.global_timeout_seconds,
                 "stop_reason": stop_reason,
             },
@@ -361,8 +436,13 @@ class CodeEvolutionEngine:
                 "smoke_algorithm_samples_seconds": list(smoke.algorithm_samples_seconds),
             },
             "measurement_note": (
-                "Algorithm samples are measured inside the trusted container wrapper with perf_counter_ns. "
-                "Container wall time is reported separately and is not used for candidate ranking. "
-                "Native cross-language metrics are not compared against these Python measurements."
+                "Each candidate is checked on the same deterministic integer-sort workload suite: "
+                "original input, ascending, descending, nearly sorted, duplicate-heavy, "
+                "low-cardinality, organ-pipe, and all-equal inputs. Each workload receives the "
+                "same repeat count; the aggregate score is the median of per-workload medians, "
+                "giving every workload equal weight. Raw samples and per-workload medians are "
+                "retained. Algorithm samples are measured inside the trusted container wrapper "
+                "with perf_counter_ns. Container wall time is reported separately and is not used "
+                "for candidate ranking."
             ),
         }
