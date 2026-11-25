@@ -563,22 +563,22 @@ class SandboxRunner:
             analysis = analyze_project(snapshot)
             plan = build_validation_plan(snapshot, analysis)
         except Exception:
-            return ProjectTestExecutionResult(False, False, 0, 0, 0, 0, 0.0, "not_executed",
+            return ProjectTestExecutionResult(False, False, False, 0, 0, 0, 0, 0.0, "not_executed",
                                               "Project preflight failed")
 
         python_targets = [item for item in plan["test_targets"] if item["ecosystem"] == "python"]
         if not python_targets or any(item["framework_candidates"] != ["unittest"] for item in python_targets):
-            return ProjectTestExecutionResult(False, False, 0, 0, 0, 0, 0.0, "not_executed",
+            return ProjectTestExecutionResult(False, False, False, 0, 0, 0, 0, 0.0, "not_executed",
                                               "Only explicitly identified Python unittest suites are supported")
         if any(not item["path"].startswith("tests/") for item in python_targets):
-            return ProjectTestExecutionResult(False, False, 0, 0, 0, 0.0, "not_executed",
+            return ProjectTestExecutionResult(False, False, False, 0, 0, 0, 0, 0.0, "not_executed",
                                               "Python unittest files must be under tests/")
         file_paths = {entry.path for entry in snapshot.files}
         for item in python_targets:
             parent = PurePosixPath(item["path"]).parent
             while str(parent) != "tests":
                 if f"{parent}/__init__.py" not in file_paths:
-                    return ProjectTestExecutionResult(False, False, 0, 0, 0, 0.0, "not_executed",
+                    return ProjectTestExecutionResult(False, False, False, 0, 0, 0, 0, 0.0, "not_executed",
                                                       "Nested unittest directories must be Python packages")
                 parent = parent.parent
 
@@ -594,7 +594,7 @@ class SandboxRunner:
                     raise ValueError("Project workspace size limit exceeded")
                 additional_files[entry.path] = raw
         except Exception:
-            return ProjectTestExecutionResult(False, False, 0, 0, 0, 0, 0.0, "not_executed",
+            return ProjectTestExecutionResult(False, False, False, 0, 0, 0, 0, 0.0, "not_executed",
                                               "Project snapshot could not be staged safely")
 
         sandbox_result = self.run_python(
