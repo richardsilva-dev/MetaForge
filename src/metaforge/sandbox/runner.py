@@ -245,6 +245,9 @@ _trusted_type = type
 _trusted_any = any
 _trusted_list_type = list
 _trusted_int_type = int
+_trusted_dict_type = dict
+_trusted_set_type = set
+_trusted_bool_type = bool
 _trusted_range = range
 _trusted_monotonic = time.monotonic
 _trusted_popen = subprocess.Popen
@@ -365,9 +368,21 @@ for _ in _trusted_range(repeat_count):
         child_payload = _trusted_json_loads(child_stdout.decode("utf-8"))
     except (UnicodeDecodeError, ValueError):
         fail(38)
-    if not isinstance(child_payload, dict) or set(child_payload) != {"output"}:
+    if not isinstance(child_payload, dict) or set(child_payload) not in (
+        {"output"}, {"output", "test_summary"}
+    ):
         fail(39)
     result = child_payload["output"]
+    test_summary = child_payload.get("test_summary")
+    if test_summary is not None:
+        expected_summary_keys = {"tests_run", "failures", "errors", "skipped", "successful"}
+        if type(test_summary) is not _trusted_dict_type or _trusted_set_type(test_summary) != expected_summary_keys:
+            fail(46)
+        for key in ("tests_run", "failures", "errors", "skipped"):
+            if type(test_summary[key]) is not _trusted_int_type or test_summary[key] < 0:
+                fail(47)
+        if type(test_summary["successful"]) is not _trusted_bool_type:
+            fail(48)
     if _trusted_type(result) is not _trusted_list_type or _trusted_any(
         _trusted_type(value) is not _trusted_int_type for value in result
     ):
@@ -376,9 +391,10 @@ for _ in _trusted_range(repeat_count):
         fail(41)
     samples_ns.append(max(0, elapsed))
 
-_trusted_stdout_write(json.dumps(
-    {"output": result, "samples_ns": samples_ns}, separators=(",", ":")
-) + "\n")
+response = {"output": result, "samples_ns": samples_ns}
+if test_summary is not None:
+    response["test_summary"] = test_summary
+_trusted_stdout_write(json.dumps(response, separators=(",", ":")) + "\n")
 
 """
 
