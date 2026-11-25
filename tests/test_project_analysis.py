@@ -21,6 +21,8 @@ def test_analysis_is_static_deterministic_and_builds_import_graph(tmp_path):
     assert result == analyze_project(snapshot)
     report = result.to_dict()
     assert report["analysis_scope"]["executed_project_code"] is False
+    assert "secret" not in str(dependencies)
+    assert any(item["name"] == "private-lib" and item["requirement"] == "[direct-reference-redacted]" for item in dependencies)
     assert report["language_counts"] == {"python": 3, "rust": 1}
     assert any(x["target"] == "sample.models" and x["resolution"] == "local" for x in report["imports"])
     assert any(x["source_path"] == "src/sample/__init__.py" and x["target"] == "sample.service" for x in report["imports"])
@@ -101,7 +103,7 @@ def test_analysis_inventories_root_dependency_manifests_without_execution(tmp_pa
     root.mkdir()
     _project(root)
     (root / "pyproject.toml").write_text(
-        '[project]\nname = "sample"\ndependencies = ["requests>=2.31", "pydantic>=2"]\n'
+        '[project]\nname = "sample"\ndependencies = ["requests>=2.31", "pydantic>=2", "private-lib @ https://user:secret@example.invalid/repo.git"]\n'
         '[project.optional-dependencies]\ndev = ["pytest>=8"]\n',
         encoding="utf-8",
     )
@@ -112,7 +114,7 @@ def test_analysis_inventories_root_dependency_manifests_without_execution(tmp_pa
     snapshot = capture_project_snapshot(root)
     report = analyze_project(snapshot).to_dict()
     dependencies = report["dependency_manifests"]
-    assert {item["name"] for item in dependencies} == {"requests", "pydantic", "pytest", "left-pad", "vitest"}
+    assert {item["name"] for item in dependencies} == {"requests", "pydantic", "private-lib", "pytest", "left-pad", "vitest"}
     assert any(item["name"] == "requests" and item["group"] == "runtime" for item in dependencies)
     assert any(item["name"] == "pytest" and item["group"] == "optional:dev" for item in dependencies)
     assert report["analysis_scope"]["executed_project_code"] is False
