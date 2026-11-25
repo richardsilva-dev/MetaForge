@@ -117,6 +117,7 @@ def test_candidate_is_promoted_only_when_it_beats_baseline_by_required_margin():
 
     assert result["selection"]["selected_source"] == "candidate"
     assert result["selection"]["candidate_promoted"] is True
+    assert result["selection"]["verification_stage"] == "awaiting_independent_replay"
     assert result["selection"]["improvement_ratio"] == pytest.approx(0.75)
     assert result["best_candidate"]["candidate"]["fingerprint"] != result["baseline"]["candidate"]["fingerprint"]
 
