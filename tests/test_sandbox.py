@@ -192,3 +192,44 @@ def test_candidate_cannot_spoof_timing_or_wrapper_output_by_monkeypatching(tmp_p
     assert payload["output"] == [1, 2, 5, 9]
     assert len(payload["samples_ns"]) == 3
     assert all(type(sample) is int and sample > 0 for sample in payload["samples_ns"])
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="supervisor dumpability is a Linux control")
+def test_candidate_worker_cannot_write_to_supervisor_stdout_via_procfs(tmp_path):
+    import subprocess
+
+    from metaforge.sandbox.runner import _RUNNER_SOURCE, _WORKER_SOURCE
+
+    runner_path = tmp_path / "runner.py"
+    worker_path = tmp_path / "candidate_worker.py"
+    candidate_path = tmp_path / "candidate.py"
+    input_path = tmp_path / "input.json"
+    runner_path.write_text(_RUNNER_SOURCE, encoding="utf-8")
+    worker_path.write_text(_WORKER_SOURCE, encoding="utf-8")
+    candidate_path.write_text(
+        "import os\\n"
+        "def solve(values):\\n"
+        "    try:\\n"
+        "        with open(f'/proc/{os.getppid()}/fd/1', 'w') as stream:\\n"
+        "            stream.write('FORGED-SUPERVISOR-OUTPUT')\\n"
+        "    except OSError:\\n"
+        "        pass\\n"
+        "    values.sort()\\n"
+        "    return values\\n",
+        encoding="utf-8",
+    )
+    input_path.write_text(json.dumps({"values": [9, 1, 5, 2]}), encoding="utf-8")
+
+    completed = subprocess.run(
+        [sys.executable, "-I", str(runner_path), str(candidate_path), str(input_path), str(worker_path), "2", "0", "5", "1000000"],
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "FORGED-SUPERVISOR-OUTPUT" not in completed.stdout
+    payload = json.loads(completed.stdout)
+    assert payload["output"] == [1, 2, 5, 9]
+    assert len(payload["samples_ns"]) == 2
