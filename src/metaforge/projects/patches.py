@@ -7,7 +7,6 @@ import shutil
 import tempfile
 
 from metaforge.projects.models import (
-    FileChange,
     ProjectContractError,
     ProjectPatch,
     ProjectPolicy,
