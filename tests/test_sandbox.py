@@ -150,3 +150,42 @@ def test_trusted_sandbox_smoke_uses_probe_mode(tmp_path):
     args = Path(str(runtime) + ".args").read_text(encoding="utf-8")
     assert args.rstrip().endswith("1")
     assert len(result.algorithm_samples_seconds) == 2
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="runner wrapper depends on Linux resource limits")
+def test_candidate_cannot_spoof_timing_or_wrapper_output_by_monkeypatching(tmp_path):
+    import subprocess
+
+    from metaforge.sandbox.runner import _RUNNER_SOURCE
+
+    runner_path = tmp_path / "runner.py"
+    candidate_path = tmp_path / "candidate.py"
+    input_path = tmp_path / "input.json"
+    runner_path.write_text(_RUNNER_SOURCE, encoding="utf-8")
+    candidate_path.write_text(
+        "import builtins, json, sys, time\\n"
+        "time.perf_counter_ns = lambda: 0\\n"
+        "json.dumps = lambda *args, **kwargs: '{}'\\n"
+        "sys.stdout.write = lambda value: 0\\n"
+        "builtins.sorted = lambda values: []\\n"
+        "builtins.range = lambda *args: []\\n"
+        "def solve(values):\\n"
+        "    values.sort()\\n"
+        "    return values\\n",
+        encoding="utf-8",
+    )
+    input_path.write_text(json.dumps({"values": [9, 1, 5, 2]}), encoding="utf-8")
+
+    completed = subprocess.run(
+        [sys.executable, "-I", str(runner_path), str(candidate_path), str(input_path), "3", "0"],
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    assert payload["output"] == [1, 2, 5, 9]
+    assert len(payload["samples_ns"]) == 3
+    assert all(type(sample) is int and sample > 0 for sample in payload["samples_ns"])
