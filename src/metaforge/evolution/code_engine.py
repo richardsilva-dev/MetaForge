@@ -430,7 +430,7 @@ class CodeEvolutionEngine:
             "schema_version": "1.1",
             "run_id": uuid4().hex,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "engine_version": "0.8.0-dev",
+            "engine_version": "0.9.0-dev",
             "environment": runtime_metadata(),
             "engine": "metaforge_code_evolution",
             "problem": "integer_sort",
