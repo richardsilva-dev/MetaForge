@@ -20,7 +20,7 @@ def test_secret_scan_detects_common_secret_patterns_without_retaining_values(tmp
         "google": "AIza" + "G" * 35,
         "slack": "xoxb-" + "H" * 28,
         "jwt": "eyJ" + "I" * 16 + "." + "J" * 16 + "." + "K" * 16,
-        "generic": "password = 'generic-secret-value-123'\\nAWS_SECRET_ACCESS_KEY = 'aws-secret-value-123456' ",
+        "generic": "password = 'generic-secret-value-123'\nAWS_SECRET_ACCESS_KEY = 'aws-secret-value-123456' ",
         "url": "https://service-user:service-password@example.invalid/path",
     }
     source = "\n".join([
