@@ -30,6 +30,7 @@ MetaForge has two separate evaluation paths.
 - A container is not a proof against kernel/runtime vulnerabilities or container escapes. Use a dedicated isolated host or VM for high-risk research.
 - The static AST reviewer is not a sandbox and must never be treated as one.
 - Project snapshots cap included file count/bytes, total directory entries, and traversal depth; they reject detected mount points and cross-device filesystem boundaries inside allow-listed roots.
+- The default snapshot traversal-depth limit is 64 nested directories (configurable up to 256); increasing it should be justified by the repository layout and reviewed alongside the total-entry budget.
 - Filesystem-boundary checks use device IDs plus the platform's `ismount` check. Same-device bind mounts may not be detectable on every platform; Windows path traversal also has weaker race resistance than POSIX descriptor-relative traversal.
 - The sandbox does not currently apply a custom syscall allow-list beyond the container runtime's default security profile.
 - Python tracemalloc does not measure total process memory. The source-level sandbox enforces a cgroup memory ceiling but does not yet report reliable per-candidate peak memory.
