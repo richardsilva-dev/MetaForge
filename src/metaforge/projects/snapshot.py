@@ -21,6 +21,12 @@ from metaforge.projects.models import (
 
 
 
+def _is_symlink_or_reparse_point(metadata: os.stat_result) -> bool:
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    attributes = getattr(metadata, "st_file_attributes", 0)
+    return stat.S_ISLNK(metadata.st_mode) or bool(attributes & reparse_flag)
+
+
 def _read_relative_regular_file(
     root: Path,
     relative_path: str,
@@ -69,7 +75,7 @@ def _read_relative_regular_file(
             metadata = current.lstat()
         except OSError as exc:
             raise ProjectContractError(f"Cannot inspect project path: {relative_path}") from exc
-        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        if _is_symlink_or_reparse_point(metadata) or not stat.S_ISDIR(metadata.st_mode):
             raise ProjectContractError(f"Project path has a symlink or non-directory parent: {relative_path}")
     return _read_regular_file(current / parts[-1], max_bytes)
 
@@ -112,7 +118,7 @@ def _read_regular_file(path: Path, max_bytes: int | None = None) -> bytes:
         before = path.lstat()
     except OSError as exc:
         raise ProjectContractError(f"Cannot stat project file: {path.name}") from exc
-    if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
+    if _is_symlink_or_reparse_point(before) or not stat.S_ISREG(before.st_mode):
         raise ProjectContractError(f"Project entries must be regular non-symlink files: {path.name}")
     if max_bytes is not None and before.st_size > max_bytes:
         raise ProjectContractError(f"Project file exceeds configured size limit: {path.name}")
@@ -124,7 +130,7 @@ def _read_regular_file(path: Path, max_bytes: int | None = None) -> bytes:
         raise ProjectContractError(f"Cannot safely open project file: {path.name}") from exc
     try:
         opened = os.fstat(descriptor)
-        if not stat.S_ISREG(opened.st_mode):
+        if _is_symlink_or_reparse_point(opened) or not stat.S_ISREG(opened.st_mode):
             raise ProjectContractError(f"Project entries must be regular files: {path.name}")
         if (
             opened.st_dev != before.st_dev
@@ -180,14 +186,16 @@ def capture_project_snapshot(
     policy = policy or ProjectPolicy()
     if not isinstance(policy, ProjectPolicy):
         raise ProjectContractError("A ProjectPolicy is required")
-    supplied_root = Path(root).expanduser()
+    supplied_root = Path(root).expanduser().absolute()
     try:
         root_stat = supplied_root.lstat()
     except OSError as exc:
         raise ProjectContractError("Project root does not exist or cannot be accessed") from exc
-    if stat.S_ISLNK(root_stat.st_mode) or not stat.S_ISDIR(root_stat.st_mode):
-        raise ProjectContractError("Project root must be a real directory, not a symlink")
+    if _is_symlink_or_reparse_point(root_stat) or not stat.S_ISDIR(root_stat.st_mode):
+        raise ProjectContractError("Project root must be a real directory, not a symlink or junction")
     project_root = supplied_root.resolve(strict=True)
+    if project_root != supplied_root:
+        raise ProjectContractError("Symlinked parent directories are not allowed in project roots")
 
     entries: list[SnapshotFile] = []
     total_bytes = 0
@@ -224,7 +232,7 @@ def capture_project_snapshot(
             metadata = start.lstat()
         except OSError as exc:
             raise ProjectContractError(f"Cannot inspect project root: {directory_name}") from exc
-        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        if _is_symlink_or_reparse_point(metadata) or not stat.S_ISDIR(metadata.st_mode):
             raise ProjectContractError(f"Allow-listed project root must be a real directory: {directory_name}")
 
         stack = [start]
@@ -240,14 +248,15 @@ def capture_project_snapshot(
                     continue
                 child_path = Path(child.path)
                 try:
-                    if child.is_symlink():
+                    child_metadata = child.stat(follow_symlinks=False)
+                    if _is_symlink_or_reparse_point(child_metadata):
                         raise ProjectContractError(
-                            f"Symlinks are forbidden inside snapshot roots: {child.name}"
+                            f"Symlinks and junctions are forbidden inside snapshot roots: {child.name}"
                         )
-                    if child.is_dir(follow_symlinks=False):
+                    if stat.S_ISDIR(child_metadata.st_mode):
                         subdirectories.append(child_path)
                         continue
-                    if not child.is_file(follow_symlinks=False):
+                    if not stat.S_ISREG(child_metadata.st_mode):
                         raise ProjectContractError(
                             f"Special files are forbidden inside snapshot roots: {child.name}"
                         )
