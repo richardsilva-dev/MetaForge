@@ -128,7 +128,8 @@ _trusted_stdout_write(_trusted_json_dumps(response, separators=(",", ":")) + "\n
 _PROJECT_UNITTEST_SOURCE = r"""
 import contextlib, io, os, sys, unittest
 
-project_root = "/workspace/project"
+workspace_root = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.join(workspace_root, "project")
 tests_root = os.path.join(project_root, "tests")
 source_root = os.path.join(project_root, "src")
 sys.path.insert(0, project_root)
