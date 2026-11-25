@@ -41,6 +41,7 @@ def render_code_report(result: dict[str, Any]) -> str:
         f"- Policy: {result.get('selection', {}).get('policy', 'legacy: correctness-only')}",
         f"- Selected source: {result.get('selection', {}).get('selected_source', 'legacy')}",
         f"- Candidate promoted: {result.get('selection', {}).get('candidate_promoted', 'unknown')}",
+        f"- Verification stage: {result.get('selection', {}).get('verification_stage', 'legacy / unspecified')}",
         f"- Minimum improvement: {result.get('selection', {}).get('minimum_improvement_ratio', 'n/a')}",
         f"- Minimum repeats for promotion: {result.get('selection', {}).get('minimum_repeats_for_promotion', 'n/a')}",
         f"- Baseline median: {result.get('selection', {}).get('baseline_median_seconds', 'n/a')} s",
