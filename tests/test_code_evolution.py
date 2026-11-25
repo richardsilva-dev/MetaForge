@@ -3,6 +3,7 @@ import pytest
 from metaforge.agents.code_safety import StaticCodeReviewer
 from metaforge.agents.contracts import AgentResult
 from metaforge.evolution.code_engine import CodeEvolutionEngine
+from metaforge.evolution.workloads import INTEGER_SORT_WORKLOAD_NAMES
 from metaforge.sandbox.policy import SandboxPolicy
 from metaforge.sandbox.runner import SandboxPreparation, SandboxResult, SandboxRunner
 
@@ -78,13 +79,44 @@ def test_code_evolution_runs_reviewed_candidates_only_and_tracks_lineage():
     assert result["best_candidate"] is not None
     assert result["budget"]["agent_calls_used"] == 4
     assert result["sandbox"]["smoke_passed"] is True
-    assert len(sandbox.run_calls) == 5
+    assert len(sandbox.run_calls) == 1 + 4 * len(INTEGER_SORT_WORKLOAD_NAMES)
     assert sandbox.run_calls[0][4] is True
     assert all(call[4] is False for call in sandbox.run_calls[1:])
     assert len(result["generations"]) == 2
     assert all(item["correctness_passed"] for generation in result["generations"] for item in generation["evaluations"])
     assert all(task.payload["parent_source"] is None for task in designer.tasks[:2])
     assert all(task.payload["parent_fingerprint"] for task in designer.tasks[2:])
+    assert all(
+        task.payload["benchmark_workloads"] == list(INTEGER_SORT_WORKLOAD_NAMES)
+        for task in designer.tasks
+    )
+    for generation in result["generations"]:
+        for evaluation in generation["evaluations"]:
+            assert tuple(evaluation["workload_results"]) == INTEGER_SORT_WORKLOAD_NAMES
+            assert len(evaluation["algorithm_samples_seconds"]) == 2 * len(INTEGER_SORT_WORKLOAD_NAMES)
+
+
+def test_one_incorrect_workload_rejects_candidate_and_stops_its_measurement():
+    class IncorrectWorkloadRunner(FakeSandboxRunner):
+        def run_python(self, source_code, values, timeout_seconds=None, repeats=1, smoke_probe=False):
+            self.run_calls.append((source_code, list(values), timeout_seconds, repeats, smoke_probe))
+            samples = tuple(0.001 for _ in range(repeats))
+            output = [999] if not smoke_probe and values != sorted(values) else sorted(values)
+            return SandboxResult(True, output, 0.01, "fake_internal", None, samples)
+
+    designer = FakeDesigner([SOURCE_A])
+    sandbox = IncorrectWorkloadRunner()
+    engine = CodeEvolutionEngine(
+        designer, sandbox, population_size=1, generations=1, repeats=2,
+        max_agent_calls=1, global_timeout_seconds=30,
+    )
+    result = engine.run([3, 1, 2])
+
+    assert result["best_candidate"] is None
+    assert result["generations"][0]["valid_count"] == 0
+    assert result["generations"][0]["evaluations"][0]["correctness_passed"] is False
+    assert "Workload 'input' failed" in result["generations"][0]["evaluations"][0]["error"]
+    assert len(sandbox.run_calls) == 2  # smoke plus the failing first workload
 
 
 def test_invalid_source_is_rejected_without_sandbox_execution():
@@ -110,6 +142,7 @@ def test_sandbox_preflight_happens_before_any_model_call():
     with pytest.raises(RuntimeError):
         engine.run([2, 1])
     assert designer.tasks == []
+
 
 def test_failed_sandbox_smoke_blocks_all_model_calls():
     class FailedSmokeRunner(FakeSandboxRunner):
