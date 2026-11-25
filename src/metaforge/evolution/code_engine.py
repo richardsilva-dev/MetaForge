@@ -15,7 +15,9 @@ from metaforge.agents.contracts import AgentResult, AgentTask
 from metaforge.sandbox.runner import SandboxPreparation, SandboxResult, SandboxRunner
 from metaforge.evolution.metadata import runtime_metadata
 from metaforge.evolution.benchmark_selection import (
+    DEFAULT_MINIMUM_IMPROVEMENT_RATIO,
     MINIMUM_PROMOTION_REPEATS,
+    TRUSTED_BASELINE_SOURCE,
     passes_baseline_gate,
 )
 from metaforge.evolution.workloads import (
