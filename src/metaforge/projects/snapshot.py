@@ -21,6 +21,24 @@ from metaforge.projects.models import (
 
 
 
+
+
+
+def _same_filesystem(
+    path: Path,
+    root: Path,
+    expected_device: int,
+    metadata: os.stat_result | None = None,
+) -> bool:
+    if os.name == "nt":
+        path_drive = os.path.splitdrive(os.path.abspath(path))[0].casefold()
+        root_drive = os.path.splitdrive(os.path.abspath(root))[0].casefold()
+        return bool(path_drive) and path_drive == root_drive
+    current = metadata or os.stat(path, follow_symlinks=False)
+    return current.st_dev == expected_device
+
+
+
 def _is_symlink_or_reparse_point(metadata: os.stat_result) -> bool:
     reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
     attributes = getattr(metadata, "st_file_attributes", 0)
@@ -94,7 +112,7 @@ def _read_relative_regular_file(
             raise ProjectContractError(f"Cannot inspect project path: {relative_path}") from exc
         if _is_symlink_or_reparse_point(metadata) or not stat.S_ISDIR(metadata.st_mode):
             raise ProjectContractError(f"Project path has a symlink or non-directory parent: {relative_path}")
-        if metadata.st_dev != root_metadata.st_dev:
+        if not _same_filesystem(current, root, root_metadata.st_dev, metadata):
             raise ProjectContractError("Project path crosses a filesystem boundary")
     return _read_regular_file(current / parts[-1], max_bytes, root_metadata.st_dev)
 
@@ -106,7 +124,7 @@ def _read_open_descriptor(
     expected_device: int | None = None,
 ) -> bytes:
     opened = os.fstat(descriptor)
-    if expected_device is not None and opened.st_dev != expected_device:
+    if os.name != "nt" and expected_device is not None and opened.st_dev != expected_device:
         raise ProjectContractError(f"Project path crosses a filesystem boundary: {display_path}")
     if not stat.S_ISREG(opened.st_mode):
         raise ProjectContractError(f"Project entries must be regular files: {display_path}")
@@ -264,7 +282,7 @@ def capture_project_snapshot(
             raise ProjectContractError(f"Cannot inspect project root: {directory_name}") from exc
         if _is_symlink_or_reparse_point(metadata) or not stat.S_ISDIR(metadata.st_mode):
             raise ProjectContractError(f"Allow-listed project root must be a real directory: {directory_name}")
-        if metadata.st_dev != root_device or (os.name != "nt" and os.path.ismount(start)):
+        if not _same_filesystem(start, project_root, root_device, metadata) or (os.name != "nt" and os.path.ismount(start)):
             raise ProjectContractError(f"Allow-listed project root crosses a filesystem boundary: {directory_name}")
 
         stack = [(start, 0)]
@@ -295,7 +313,7 @@ def capture_project_snapshot(
                             f"Symlinks and junctions are forbidden inside snapshot roots: {child.name}"
                         )
                     if stat.S_ISDIR(child_metadata.st_mode):
-                        if child_metadata.st_dev != root_device or (os.name != "nt" and os.path.ismount(child_path)):
+                        if not _same_filesystem(child_path, project_root, root_device, child_metadata) or (os.name != "nt" and os.path.ismount(child_path)):
                             raise ProjectContractError(
                                 f"Filesystem mount points are forbidden inside snapshot roots: {child.name}"
                             )
