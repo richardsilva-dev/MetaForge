@@ -117,6 +117,13 @@ def main() -> int:
     project_analyze = project_sub.add_parser("analyze", help="inventory languages, dependency graph, cycles, isolated modules, entry points, and public symbols without executing project code")
     project_analyze.add_argument("root", type=Path)
     project_analyze.add_argument("--output", type=Path, default=Path(".artifacts/project-analysis.json"))
+    project_review = project_sub.add_parser("review", help="review a multi-file patch against static API, dependency, and entrypoint contracts without executing project code")
+    project_review.add_argument("root", type=Path)
+    project_review.add_argument("patch", type=Path)
+    project_review.add_argument("--output", type=Path, default=Path(".artifacts/project-review.json"))
+    project_review.add_argument("--allow-breaking-changes", action="store_true")
+    project_review.add_argument("--allow-new-cycles", action="store_true")
+    project_review.add_argument("--allow-unresolved-entrypoints", action="store_true")
 
     replay = sub.add_parser("replay", help="re-run an archived experiment using its stored dataset")
     replay.add_argument("--run", type=Path, required=True, help="path to a prior experiment JSON")
@@ -141,6 +148,37 @@ def main() -> int:
         print(f"Diagnostics: {len(report['diagnostics'])}")
         print(f"Report: {args.output}")
         return 0
+
+
+
+    if args.command == "project" and args.project_command == "review":
+        try:
+            import stat
+            from metaforge.projects import ProjectPatch, capture_project_snapshot, review_project_patch
+            patch_path = args.patch.expanduser()
+            patch_stat = patch_path.lstat()
+            if not stat.S_ISREG(patch_stat.st_mode) or patch_stat.st_size > 2 * 1024 * 1024:
+                raise ValueError("Patch input must be a regular file no larger than 2 MiB")
+            patch_data = json.loads(patch_path.read_text(encoding="utf-8"))
+            patch = ProjectPatch.from_dict(patch_data)
+            snapshot = capture_project_snapshot(args.root)
+            report = review_project_patch(
+                snapshot,
+                patch,
+                allow_breaking_changes=args.allow_breaking_changes,
+                allow_new_cycles=args.allow_new_cycles,
+                allow_unresolved_entrypoints=args.allow_unresolved_entrypoints,
+            )
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+        except Exception as exc:
+            parser.error(f"project review stopped safely: {type(exc).__name__}: {exc}")
+        print(f"Patch accepted: {report['accepted']}")
+        print(f"Breaking API changes: {len(report['public_api']['breaking_changes'])}")
+        print(f"New dependency cycles: {len(report['dependency_graph']['new_cycles'])}")
+        print(f"Entrypoint regressions: {len(report['entry_points']['regressions'])}")
+        print(f"Report: {args.output}")
+        return 0 if report["accepted"] else 1
 
 
     if args.command == "run":
