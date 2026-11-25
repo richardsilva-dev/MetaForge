@@ -51,7 +51,7 @@ MetaForge currently provides two related experimental paths:
 
 Agent output is untrusted input. Agents can propose or summarize; deterministic code decides whether a candidate passes safety and correctness gates. The source-level pipeline requires both static review and a successful sandbox preflight/smoke test before model calls or candidate execution. Static analysis is defense in depth, not a security boundary.
 
-Project patch contracts are separate from the current code-evolution engine. A snapshot includes only allow-listed UTF-8 text files under `src/`, `tests/`, `docs/`, and `backends/`, plus selected root documentation files. Hidden directories, environments, caches, build outputs, binary assets, and dependency/build manifests are not included. Shell/batch scripts and build manifests are protected. Existing files under `tests/` cannot be replaced or deleted; new tests can be added. Applying a PatchSet verifies the source snapshot and expected file hashes, then creates a new directory atomically without modifying the original checkout. No project code is executed by this API. Hardcoded secrets inside otherwise included source files are not detected yet; do not send project files to a model until a dedicated secret-scanning/redaction layer exists.
+Project patch contracts are separate from the current code-evolution engine. A snapshot includes only allow-listed UTF-8 text files under `src/`, `tests/`, `docs/`, and `backends/`, plus selected root documentation files. Hidden directories, environments, caches, build outputs, binary assets, and dependency/build manifests are not included. Shell/batch scripts and build manifests are protected. Existing files under `tests/` cannot be replaced or deleted; new tests can be added. Applying a PatchSet verifies the source snapshot and expected file hashes, then creates a new directory atomically without modifying the original checkout. No project code is executed by this API. A local heuristic scanner can flag common credential formats in captured text files, but it is not a complete secret detector and must not be treated as proof that files are safe to transmit.
 
 
 ## Project snapshots and PatchSets (foundation API)
@@ -68,8 +68,8 @@ from metaforge.projects import (
 
 snapshot = capture_project_snapshot("path/to/project")
 secret_report = scan_project_secrets(snapshot)
-if secret_report.findings:
-    raise RuntimeError("Review potential secrets before using project contents")
+if not secret_report.no_detected_secrets:
+    raise RuntimeError("Secret scan incomplete or findings detected; do not use project contents")
 
 original = snapshot.file_map["src/module.py"]
 
