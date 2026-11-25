@@ -283,7 +283,7 @@ def capture_project_snapshot(
                 raise
             except OSError as exc:
                 raise ProjectContractError(f"Cannot enumerate project directory: {current.name}") from exc
-            subdirectories: list[Path] = []
+            subdirectories: list[tuple[Path, int]] = []
             for child in children:
                 if child.name.casefold() in _IGNORED_DIRECTORY_NAMES or child.name.startswith("."):
                     continue
