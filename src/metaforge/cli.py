@@ -112,11 +112,36 @@ def main() -> int:
     sandbox_smoke.add_argument("--runtime", choices=["podman", "docker"], default=os.environ.get("METAFORGE_SANDBOX_RUNTIME", "podman"))
     sandbox_smoke.add_argument("--image", default=os.environ.get("METAFORGE_SANDBOX_IMAGE"))
 
+    project = sub.add_parser("project", help="inspect a project using bounded static analysis")
+    project_sub = project.add_subparsers(dest="project_command", required=True)
+    project_analyze = project_sub.add_parser("analyze", help="inventory languages, Python imports, and public symbols without executing project code")
+    project_analyze.add_argument("root", type=Path)
+    project_analyze.add_argument("--output", type=Path, default=Path(".artifacts/project-analysis.json"))
+
     replay = sub.add_parser("replay", help="re-run an archived experiment using its stored dataset")
     replay.add_argument("--run", type=Path, required=True, help="path to a prior experiment JSON")
     replay.add_argument("--output", type=Path, default=Path(".artifacts/replay-latest.json"))
 
     args = parser.parse_args()
+
+    if args.command == "project" and args.project_command == "analyze":
+        try:
+            from metaforge.projects import analyze_project, capture_project_snapshot
+            snapshot = capture_project_snapshot(args.root)
+            report = analyze_project(snapshot).to_dict()
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        except Exception as exc:
+            parser.error(f"project analysis stopped safely: {type(exc).__name__}: {exc}")
+        print(f"Snapshot: {snapshot.fingerprint}")
+        print(f"Files analyzed: {report['files_analyzed']}")
+        print(f"Languages: {report['language_counts']}")
+        print(f"Imports: {len(report['imports'])}")
+        print(f"Public symbols: {len(report['symbols'])}")
+        print(f"Diagnostics: {len(report['diagnostics'])}")
+        print(f"Report: {args.output}")
+        return 0
+
 
     if args.command == "run":
         if not 1 <= args.size <= 100_000:
