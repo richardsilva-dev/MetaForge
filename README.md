@@ -17,6 +17,7 @@ MetaForge currently provides two related experimental paths:
 - Built-in sort, insertion sort, merge sort, heapsort, shellsort, quicksort, and hybrid quicksort variants.
 - Seeded population generation, mutation, crossover, Pareto/crowding selection, strategy diversity preservation, and candidate lineage.
 - Multi-objective ranking across median runtime and traced Python allocation peak, with raw repeat samples and median absolute deviation.
+- Source-level evolution promotion is gated against a trusted `sorted()` baseline measured in the same rootless sandbox and workload suite; candidates must beat it by at least 5% on the equal-weight aggregate score, keep each workload's regression within 2%, clear a robust median-absolute-deviation (MAD) spread check, and provide at least five samples per workload. This is a conservative engineering filter, not a formal significance test; independent reproduction remains required. Correct but slower or inconclusive candidates remain archived but are not promoted. A candidate selected during evolution is explicitly marked provisional until a separate replay run clears the same gate; replay success is not a production-security certification.
 - Correctness gate against Python's independent `sorted()` oracle.
 - Repeated timing and traced Python-memory measurements.
 - Bounded parallelism, evaluation budget, worker timeout, and global experiment deadline.
@@ -131,7 +132,7 @@ Configure rootless Podman or Docker and a local image pinned by SHA-256 digest, 
 
 With the optional Agents SDK installed and API key/model set in the shell:
 
-    python -m metaforge.cli code-evolve --size 5000 --population-size 2 --generations 2 --repeats 3 --max-agent-calls 4
+    python -m metaforge.cli code-evolve --size 5000 --population-size 2 --generations 2 --repeats 5 --max-agent-calls 4
 
 The source proposal contract currently requires a pure `solve(values)` function returning an ascending list of signed 64-bit integers. Each candidate is evaluated on eight deterministic workload profiles derived from the same integrity-checked dataset: original, ascending, descending, nearly sorted, duplicate-heavy, low-cardinality, organ-pipe, and all-equal. Each profile receives the same repeat count; the selection score is the median of per-workload medians, so a candidate cannot win by exploiting only one input ordering. Proposed code is reviewed, executed in a rootless container with no network, and checked against the independent host-side sorting oracle on every workload. Model output is never trusted as proof of safety or correctness.
 

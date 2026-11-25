@@ -77,9 +77,12 @@ def test_code_evolution_runs_reviewed_candidates_only_and_tracks_lineage():
     )
     result = engine.run([5, 1, 4, 2, 3])
     assert result["best_candidate"] is not None
+    assert result["selection"]["selected_source"] == "trusted_baseline"
+    assert result["selection"]["candidate_promoted"] is False
+    assert result["baseline"]["correctness_passed"] is True
     assert result["budget"]["agent_calls_used"] == 4
     assert result["sandbox"]["smoke_passed"] is True
-    assert len(sandbox.run_calls) == 1 + 4 * len(INTEGER_SORT_WORKLOAD_NAMES)
+    assert len(sandbox.run_calls) == 1 + len(INTEGER_SORT_WORKLOAD_NAMES) + 3 * len(INTEGER_SORT_WORKLOAD_NAMES)
     assert sandbox.run_calls[0][4] is True
     assert all(call[4] is False for call in sandbox.run_calls[1:])
     assert len(result["generations"]) == 2
@@ -96,15 +99,38 @@ def test_code_evolution_runs_reviewed_candidates_only_and_tracks_lineage():
             assert len(evaluation["algorithm_samples_seconds"]) == 2 * len(INTEGER_SORT_WORKLOAD_NAMES)
 
 
+
+def test_candidate_is_promoted_only_when_it_beats_baseline_by_required_margin():
+    class FasterCandidateRunner(FakeSandboxRunner):
+        def run_python(self, source_code, values, timeout_seconds=None, repeats=1, smoke_probe=False):
+            self.run_calls.append((source_code, list(values), timeout_seconds, repeats, smoke_probe))
+            sample = 0.0005 if source_code == SOURCE_B else 0.002
+            return SandboxResult(True, sorted(values), 0.03, "fake_internal", None, tuple(sample for _ in range(repeats)))
+
+    designer = FakeDesigner([SOURCE_B])
+    sandbox = FasterCandidateRunner()
+    engine = CodeEvolutionEngine(
+        designer, sandbox, population_size=1, generations=1, repeats=5,
+        max_agent_calls=1, global_timeout_seconds=60,
+    )
+    result = engine.run([5, 1, 4, 2, 3])
+
+    assert result["selection"]["selected_source"] == "candidate"
+    assert result["selection"]["candidate_promoted"] is True
+    assert result["selection"]["verification_stage"] == "awaiting_independent_replay"
+    assert result["selection"]["improvement_ratio"] == pytest.approx(0.75)
+    assert result["best_candidate"]["candidate"]["fingerprint"] != result["baseline"]["candidate"]["fingerprint"]
+
+
 def test_one_incorrect_workload_rejects_candidate_and_stops_its_measurement():
     class IncorrectWorkloadRunner(FakeSandboxRunner):
         def run_python(self, source_code, values, timeout_seconds=None, repeats=1, smoke_probe=False):
             self.run_calls.append((source_code, list(values), timeout_seconds, repeats, smoke_probe))
             samples = tuple(0.001 for _ in range(repeats))
-            output = [999] if not smoke_probe and values != sorted(values) else sorted(values)
+            output = [999] if source_code != CodeEvolutionEngine.BASELINE_SOURCE and not smoke_probe and values != sorted(values) else sorted(values)
             return SandboxResult(True, output, 0.01, "fake_internal", None, samples)
 
-    designer = FakeDesigner([SOURCE_A])
+    designer = FakeDesigner([SOURCE_B])
     sandbox = IncorrectWorkloadRunner()
     engine = CodeEvolutionEngine(
         designer, sandbox, population_size=1, generations=1, repeats=2,
@@ -112,11 +138,12 @@ def test_one_incorrect_workload_rejects_candidate_and_stops_its_measurement():
     )
     result = engine.run([3, 1, 2])
 
-    assert result["best_candidate"] is None
+    assert result["best_candidate"]["candidate"]["generation"] == -1
+    assert result["selection"]["selected_source"] == "trusted_baseline"
     assert result["generations"][0]["valid_count"] == 0
     assert result["generations"][0]["evaluations"][0]["correctness_passed"] is False
     assert "Workload 'input' failed" in result["generations"][0]["evaluations"][0]["error"]
-    assert len(sandbox.run_calls) == 2  # smoke plus the failing first workload
+    assert len(sandbox.run_calls) == 2 + len(INTEGER_SORT_WORKLOAD_NAMES)  # smoke, baseline suite, first failing candidate workload
 
 
 def test_invalid_source_is_rejected_without_sandbox_execution():
@@ -127,8 +154,10 @@ def test_invalid_source_is_rejected_without_sandbox_execution():
         max_agent_calls=1, global_timeout_seconds=30,
     )
     result = engine.run([3, 1, 2])
-    assert result["best_candidate"] is None
-    assert len(sandbox.run_calls) == 1 and sandbox.run_calls[0][4] is True
+    assert result["best_candidate"]["candidate"]["generation"] == -1
+    assert result["selection"]["selected_source"] == "trusted_baseline"
+    assert len(sandbox.run_calls) == 1 + len(INTEGER_SORT_WORKLOAD_NAMES)
+    assert sandbox.run_calls[0][4] is True
     assert result["generations"][0]["proposals"][0]["success"] is False
 
 

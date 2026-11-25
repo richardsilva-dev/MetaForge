@@ -11,6 +11,12 @@ from typing import Any
 
 from metaforge.agents.code_safety import StaticCodeReviewer
 from metaforge.evolution.metadata import runtime_metadata
+from metaforge.evolution.benchmark_selection import (
+    DEFAULT_MINIMUM_IMPROVEMENT_RATIO,
+    MINIMUM_PROMOTION_REPEATS,
+    TRUSTED_BASELINE_SOURCE,
+    passes_baseline_gate,
+)
 from metaforge.evolution.workloads import (
     INTEGER_SORT_SUITE_NAME,
     INTEGER_SORT_SUITE_VERSION,
@@ -138,15 +144,36 @@ class CodeReplayEngine:
         if len(scheduled) > 20:
             raise ValueError("Archived candidate schedule exceeds the replay limit")
 
+        # Replay measures the same trusted reference so historical candidate
+        # rankings use the same promotion rule as a fresh evolution run.
+        baseline_source = "def solve(values):\n    return sorted(values)\n"
+        baseline_fingerprint = hashlib.sha256(baseline_source.encode("utf-8")).hexdigest()
+        scheduled[baseline_fingerprint] = {
+            "source_code": baseline_source,
+            "fingerprint": baseline_fingerprint,
+            "generation": -1,
+            "proposal_index": 0,
+            "parent_fingerprint": None,
+            "rationale": "Trusted Python sorted() reference",
+        }
+
         deadline = time.monotonic() + self.global_timeout_seconds
-        preparation: SandboxPreparation = self.sandbox_runner.prepare()
-        if not preparation.rootless:
+        preparation = self.sandbox_runner.prepare()
+        if not isinstance(preparation, SandboxPreparation) or not preparation.rootless:
             raise RuntimeError("Code replay requires a verified rootless sandbox runtime")
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise RuntimeError("Global time budget exhausted during sandbox preflight")
         smoke = self.sandbox_runner.smoke(timeout_seconds=remaining)
-        if not isinstance(smoke, SandboxResult) or not smoke.success or len(smoke.algorithm_samples_seconds) != 2:
+        if (
+            not isinstance(smoke, SandboxResult)
+            or not smoke.success
+            or len(smoke.algorithm_samples_seconds) != 2
+            or any(
+                type(value) not in (int, float) or not math.isfinite(value) or value <= 0
+                for value in smoke.algorithm_samples_seconds
+            )
+        ):
             raise RuntimeError("Rootless sandbox smoke failed; replay is blocked")
 
         results: list[dict[str, Any]] = []
@@ -250,14 +277,49 @@ class CodeReplayEngine:
             if stop_reason == "global_timeout":
                 break
 
-        valid = [item for item in results if item["correctness_passed"]]
-        best = min(valid, key=lambda item: item["median_algorithm_seconds"]) if valid else None
+        baseline = next(
+            (
+                item for item in results
+                if item["candidate"].get("fingerprint") == baseline_fingerprint
+                and item["correctness_passed"]
+            ),
+            None,
+        )
+        if baseline is None:
+            raise RuntimeError("Trusted baseline failed during replay; candidate ranking is invalid")
+        baseline_score = baseline["median_algorithm_seconds"]
+        promoted = [
+            item for item in results
+            if item["correctness_passed"]
+            and item["candidate"].get("fingerprint") != baseline_fingerprint
+            and item["median_algorithm_seconds"] <= baseline_score * 0.95
+            and passes_baseline_gate(
+                item["workload_results"],
+                baseline["workload_results"],
+                DEFAULT_MINIMUM_IMPROVEMENT_RATIO,
+            )
+        ]
+        best = min(promoted, key=lambda item: item["median_algorithm_seconds"]) if promoted else baseline
+        selection = {
+            "policy": "baseline_gated_minimum_relative_improvement",
+            "minimum_improvement_ratio": DEFAULT_MINIMUM_IMPROVEMENT_RATIO,
+            "minimum_repeats_for_promotion": MINIMUM_PROMOTION_REPEATS,
+            "baseline_median_seconds": baseline_score,
+            "selected_median_seconds": best["median_algorithm_seconds"],
+            "selected_source": "candidate" if promoted else "trusted_baseline",
+            "improvement_ratio": (
+                (baseline_score - best["median_algorithm_seconds"]) / baseline_score
+                if baseline_score else 0.0
+            ),
+            "candidate_promoted": bool(promoted),
+            "verification_stage": "replay_gate_passed" if promoted else "trusted_baseline_retained",
+        }
         return {
             "schema_version": "1.1",
             "run_id": uuid4().hex,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "engine": "metaforge_code_replay",
-            "engine_version": "0.8.0-dev",
+            "engine_version": "0.9.0-dev",
             "replay_of": original.get("run_id"),
             "original_created_at": original.get("created_at"),
             "environment": runtime_metadata(),
@@ -266,6 +328,8 @@ class CodeReplayEngine:
             "dataset_sha256": dataset_sha256,
             "benchmark": benchmark_metadata,
             "candidate_results": results,
+            "baseline": baseline,
+            "selection": selection,
             "best_candidate": best,
             "budget": {
                 "candidate_count": len(scheduled),

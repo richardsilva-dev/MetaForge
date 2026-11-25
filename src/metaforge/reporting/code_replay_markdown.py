@@ -47,6 +47,22 @@ def render_code_replay_report(result: dict[str, Any]) -> str:
             lines.append(f"- Error: {item['error']}")
         lines.extend(["", "Source:", "", f"{_fence(candidate['source_code'])}python",
                       candidate["source_code"], _fence(candidate["source_code"]), ""])
+    selection = result.get("selection", {})
+    if selection:
+        lines.extend([
+            "## Selection gate",
+            "",
+            f"- Policy: {selection.get('policy', 'n/a')}",
+            f"- Selected source: {selection.get('selected_source', 'n/a')}",
+            f"- Candidate promoted: {selection.get('candidate_promoted', False)}",
+            f"- Verification stage: {selection.get('verification_stage', 'legacy / unspecified')}",
+            f"- Minimum improvement: {selection.get('minimum_improvement_ratio', 'n/a')}",
+            f"- Minimum repeats for promotion: {selection.get('minimum_repeats_for_promotion', 'n/a')}",
+            f"- Baseline median: {selection.get('baseline_median_seconds', 'n/a')} s",
+            f"- Selected median: {selection.get('selected_median_seconds', 'n/a')} s",
+            f"- Measured improvement: {selection.get('improvement_ratio', 'n/a')}",
+            "",
+        ])
     best = result.get("best_candidate")
     if best:
         lines.extend([

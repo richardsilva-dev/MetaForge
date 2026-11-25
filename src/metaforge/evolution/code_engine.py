@@ -14,6 +14,12 @@ from metaforge.agents.code_safety import CodeReviewResult, StaticCodeReviewer
 from metaforge.agents.contracts import AgentResult, AgentTask
 from metaforge.sandbox.runner import SandboxPreparation, SandboxResult, SandboxRunner
 from metaforge.evolution.metadata import runtime_metadata
+from metaforge.evolution.benchmark_selection import (
+    DEFAULT_MINIMUM_IMPROVEMENT_RATIO,
+    MINIMUM_PROMOTION_REPEATS,
+    TRUSTED_BASELINE_SOURCE,
+    passes_baseline_gate,
+)
 from metaforge.evolution.workloads import (
     INTEGER_SORT_SUITE_NAME,
     INTEGER_SORT_SUITE_VERSION,
@@ -92,6 +98,10 @@ class CodeEvaluation:
 class CodeEvolutionEngine:
     """Generate, review, and sandbox-evaluate Python sorting source across workloads."""
 
+    # Require a meaningful measured gain; correctness alone never promotes a mutation.
+    MIN_IMPROVEMENT_RATIO = 0.05
+    BASELINE_SOURCE = "def solve(values):\n    return sorted(values)\n"
+
     def __init__(
         self,
         designer: Any,
@@ -100,7 +110,7 @@ class CodeEvolutionEngine:
         seed: int = 7,
         population_size: int = 2,
         generations: int = 2,
-        repeats: int = 3,
+        repeats: int = 5,
         max_agent_calls: int = 8,
         global_timeout_seconds: float = 180.0,
     ) -> None:
@@ -243,11 +253,31 @@ class CodeEvolutionEngine:
         if not isinstance(smoke, SandboxResult) or not smoke.success:
             detail = smoke.error if isinstance(smoke, SandboxResult) else "invalid smoke result"
             raise RuntimeError(f"Rootless sandbox smoke failed: {detail or 'policy verification failed'}")
-        if len(smoke.algorithm_samples_seconds) != 2:
+        if (
+            len(smoke.algorithm_samples_seconds) != 2
+            or any(
+                type(value) not in (int, float) or not math.isfinite(value) or value <= 0
+                for value in smoke.algorithm_samples_seconds
+            )
+        ):
             raise RuntimeError("Rootless sandbox smoke returned invalid timing samples")
+
+        # Measure the trusted reference under the exact same workload suite and sandbox.
+        baseline_candidate = CodeCandidate.create(
+            self.BASELINE_SOURCE, "Trusted Python sorted() reference", -1, 0, None, "trusted-baseline"
+        )
+        baseline_review = self.reviewer.review(self.BASELINE_SOURCE)
+        if not baseline_review.approved:
+            raise RuntimeError("Trusted baseline did not pass static review")
+        baseline_evaluation = self._evaluate_candidate(
+            baseline_candidate, baseline_review, workloads, deadline
+        )
+        if not baseline_evaluation.success or baseline_evaluation.median_algorithm_seconds is None:
+            raise RuntimeError("Trusted baseline failed correctness or benchmark validation")
+
         calls_used = 0
         stop_reason = "generation_limit"
-        seen_fingerprints: set[str] = set()
+        seen_fingerprints: set[str] = {baseline_candidate.fingerprint}
         history: list[dict[str, Any]] = []
         all_valid: list[CodeEvaluation] = []
         parent_pool: list[CodeEvaluation] = []
@@ -367,8 +397,18 @@ class CodeEvolutionEngine:
 
                 evaluation = self._evaluate_candidate(candidate, review, workloads, deadline)
                 evaluations.append(evaluation)
-                if evaluation.success:
-                    all_valid.append(evaluation)
+                if evaluation.success and evaluation.median_algorithm_seconds is not None:
+                    baseline_score = baseline_evaluation.median_algorithm_seconds
+                    required_score = baseline_score * (1.0 - self.MIN_IMPROVEMENT_RATIO)
+                    if (
+                        evaluation.median_algorithm_seconds <= required_score
+                        and passes_baseline_gate(
+                            evaluation.workload_results,
+                            baseline_evaluation.workload_results,
+                            self.MIN_IMPROVEMENT_RATIO,
+                        )
+                    ):
+                        all_valid.append(evaluation)
                 if time.monotonic() >= deadline:
                     stop_reason = "global_timeout"
                     break
@@ -384,23 +424,37 @@ class CodeEvolutionEngine:
                 "evaluations": [item.to_dict() for item in evaluations],
                 "valid_count": sum(item.success for item in evaluations),
             })
-            current_parents = [item for item in evaluations if item.success]
+            current_parents = [
+                item for item in evaluations
+                if item.success and item.median_algorithm_seconds is not None
+                and item.median_algorithm_seconds <= baseline_evaluation.median_algorithm_seconds * (1.0 - self.MIN_IMPROVEMENT_RATIO)
+                and passes_baseline_gate(
+                    item.workload_results,
+                    baseline_evaluation.workload_results,
+                    self.MIN_IMPROVEMENT_RATIO,
+                )
+            ]
             parent_pool = current_parents[:2] or sorted(
                 all_valid, key=lambda item: item.median_algorithm_seconds if item.median_algorithm_seconds is not None else float("inf")
             )[:2]
+            if not parent_pool:
+                parent_pool = [baseline_evaluation]
             if stop_reason in {"global_timeout", "agent_call_budget_exhausted"}:
                 break
 
-        best = min(
+        best_candidate = min(
             all_valid,
             key=lambda item: item.median_algorithm_seconds
             if item.median_algorithm_seconds is not None else float("inf"),
-        ) if all_valid else None
+        ) if all_valid else baseline_evaluation
+        best_is_candidate = bool(all_valid)
+        baseline_score = baseline_evaluation.median_algorithm_seconds
+        best_score = best_candidate.median_algorithm_seconds
         return {
             "schema_version": "1.1",
             "run_id": uuid4().hex,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "engine_version": "0.8.0-dev",
+            "engine_version": "0.9.0-dev",
             "environment": runtime_metadata(),
             "engine": "metaforge_code_evolution",
             "problem": "integer_sort",
@@ -415,7 +469,21 @@ class CodeEvolutionEngine:
                 "workload_sha256": workload_digests,
             },
             "generations": history,
-            "best_candidate": best.to_dict() if best else None,
+            "baseline": baseline_evaluation.to_dict(),
+            "selection": {
+                "policy": "baseline_gated_minimum_relative_improvement",
+                "minimum_improvement_ratio": self.MIN_IMPROVEMENT_RATIO,
+                "minimum_repeats_for_promotion": MINIMUM_PROMOTION_REPEATS,
+                "baseline_median_seconds": baseline_score,
+                "selected_median_seconds": best_score,
+                "selected_source": "candidate" if best_is_candidate else "trusted_baseline",
+                "improvement_ratio": (baseline_score - best_score) / baseline_score if baseline_score else 0.0,
+                "candidate_promoted": best_is_candidate,
+                "verification_stage": (
+                    "awaiting_independent_replay" if best_is_candidate else "trusted_baseline"
+                ),
+            },
+            "best_candidate": best_candidate.to_dict() if best_candidate else None,
             "budget": {
                 "max_agent_calls": self.max_agent_calls,
                 "agent_calls_used": calls_used,

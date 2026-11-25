@@ -78,7 +78,7 @@ def main() -> int:
     code_evolve.add_argument("--seed", type=int, default=7)
     code_evolve.add_argument("--population-size", type=int, default=2)
     code_evolve.add_argument("--generations", type=int, default=2)
-    code_evolve.add_argument("--repeats", type=int, default=3)
+    code_evolve.add_argument("--repeats", type=int, default=5)
     code_evolve.add_argument("--max-agent-calls", type=int, default=8)
     code_evolve.add_argument("--global-timeout", type=float, default=180.0)
     code_evolve.add_argument("--agent-timeout", type=float, default=30.0)
