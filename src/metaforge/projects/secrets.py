@@ -47,7 +47,7 @@ class SecretScanReport:
     findings_truncated: bool = False
 
     @property
-    def safe_to_send_to_model(self) -> bool:
+    def no_detected_secrets(self) -> bool:
         return not self.findings and not self.findings_truncated
 
     def to_dict(self) -> dict[str, Any]:
@@ -56,7 +56,7 @@ class SecretScanReport:
             "files_scanned": self.files_scanned,
             "finding_count": len(self.findings),
             "findings_truncated": self.findings_truncated,
-            "safe_to_send_to_model": self.safe_to_send_to_model,
+            "no_detected_secrets": self.no_detected_secrets,
             "findings": [finding.to_dict() for finding in self.findings],
         }
 
