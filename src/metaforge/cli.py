@@ -263,7 +263,7 @@ def main() -> int:
             analysis = analyze_project(snapshot)
             report = build_validation_plan(snapshot, analysis)
             args.output.parent.mkdir(parents=True, exist_ok=True)
-            args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+            args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         except Exception as exc:
             parser.error(f"project validation planning stopped safely: {type(exc).__name__}: {exc}")
         print(f"Test targets discovered: {report['risk_summary']['test_targets']}")
