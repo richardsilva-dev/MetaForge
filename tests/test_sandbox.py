@@ -254,16 +254,16 @@ def test_candidate_cannot_signal_or_ptrace_the_trusted_supervisor(tmp_path):
     runner_path.write_text(_RUNNER_SOURCE, encoding="utf-8")
     worker_path.write_text(_WORKER_SOURCE, encoding="utf-8")
     candidate_path.write_text(
-        "import os, signal\\n"
-        "def solve(values):\\n"
-        "    try:\\n"
-        "        os.kill(os.getppid(), signal.SIGKILL)\\n"
-        "    except PermissionError:\\n"
-        "        pass\\n"
-        "    else:\\n"
-        "        return []\\n"
-        "    values.sort()\\n"
-        "    return values\\n",
+        "import os, signal\n"
+        "def solve(values):\n"
+        "    try:\n"
+        "        os.kill(os.getppid(), signal.SIGKILL)\n"
+        "    except PermissionError:\n"
+        "        pass\n"
+        "    else:\n"
+        "        return []\n"
+        "    values.sort()\n"
+        "    return values\n",
         encoding="utf-8",
     )
     input_path.write_text(json.dumps({"values": [9, 1, 5, 2]}), encoding="utf-8")
