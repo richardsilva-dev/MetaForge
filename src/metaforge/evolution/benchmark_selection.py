@@ -5,7 +5,7 @@ import statistics
 from typing import Any
 
 
-TRUSTED_BASELINE_SOURCE = "def solve(values):\\n    return sorted(values)\\n"
+TRUSTED_BASELINE_SOURCE = "def solve(values):\n    return sorted(values)\n"
 DEFAULT_MINIMUM_IMPROVEMENT_RATIO = 0.05
 MINIMUM_PROMOTION_REPEATS = 5
 
