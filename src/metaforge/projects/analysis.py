@@ -2,6 +2,10 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 import hashlib
+import json
+import re
+import tomllib
+import xml.etree.ElementTree as ET
 from pathlib import PurePosixPath
 from typing import Any
 from metaforge.projects.models import ProjectContractError, ProjectSnapshot
@@ -51,6 +55,19 @@ class ProjectSymbol:
                 "line": self.line, "signature": self.signature}
 
 @dataclass(frozen=True, slots=True)
+class ManifestDependency:
+    manifest_path: str
+    ecosystem: str
+    name: str
+    requirement: str
+    group: str
+    source: str = "declared"
+    def to_dict(self) -> dict[str, Any]:
+        return {"manifest_path": self.manifest_path, "ecosystem": self.ecosystem,
+                "name": self.name, "requirement": self.requirement,
+                "group": self.group, "source": self.source}
+
+@dataclass(frozen=True, slots=True)
 class ProjectAnalysis:
     snapshot_fingerprint: str
     files_analyzed: int
@@ -60,6 +77,7 @@ class ProjectAnalysis:
     symbols: tuple[ProjectSymbol, ...]
     diagnostics: tuple[dict[str, Any], ...]
     dependency_graph: dict[str, Any]
+    dependency_manifests: tuple[ManifestDependency, ...]
     def to_dict(self) -> dict[str, Any]:
         return {
             "schema_version": "1.0", "snapshot_fingerprint": self.snapshot_fingerprint,
@@ -69,8 +87,10 @@ class ProjectAnalysis:
             "symbols": [x.to_dict() for x in self.symbols],
             "diagnostics": [dict(x) for x in self.diagnostics],
             "dependency_graph": self.dependency_graph,
+            "dependency_manifests": [item.to_dict() for item in self.dependency_manifests],
             "analysis_scope": {"static_only": True, "executed_project_code": False,
-                "python_ast": True, "other_languages": "file inventory only; dedicated parsers are future work"},
+                "python_ast": True, "other_languages": "file inventory only; dedicated parsers are future work",
+                "manifest_inventory": "explicit root allow-list; declarations only; no resolution, installation, or execution"},
         }
 
 def _module_name(path: str) -> str | None:
@@ -262,19 +282,123 @@ def _dependency_graph(modules: list[ProjectModule], imports: list[ProjectImport]
     }
 
 
+_MANIFEST_NAMES = {
+    "pyproject.toml": "python", "requirements.txt": "python",
+    "package.json": "node", "cargo.toml": "rust", "go.mod": "go",
+    "composer.json": "php", "pom.xml": "maven",
+}
+
+def _manifest_dependencies(path: str, raw: bytes) -> tuple[list[ManifestDependency], list[dict[str, Any]]]:
+    """Inventory explicitly allow-listed root manifests without resolving or installing dependencies."""
+    name = PurePosixPath(path).name.casefold()
+    ecosystem = _MANIFEST_NAMES.get(name)
+    if ecosystem is None:
+        return [], []
+    found: list[ManifestDependency] = []
+    diagnostics: list[dict[str, Any]] = []
+    def add(dep_name: Any, requirement: Any, group: str, source: str = "declared") -> None:
+        if not isinstance(dep_name, str) or not isinstance(requirement, (str, int, float)):
+            return
+        safe_name = dep_name.strip()
+        safe_requirement = str(requirement).strip()
+        if (not safe_name or len(safe_name) > 256 or len(safe_requirement) > 512
+                or any(ord(char) < 32 for char in safe_name + safe_requirement + group)):
+            return
+        if "://" in safe_requirement or "git+" in safe_requirement.casefold():
+            safe_requirement = "[direct-reference-redacted]"
+        found.append(ManifestDependency(path, ecosystem, safe_name, safe_requirement, group, source))
+    try:
+        if name == "pyproject.toml":
+            data = tomllib.loads(raw.decode("utf-8"))
+            project = data.get("project", {})
+            if isinstance(project, dict):
+                for item in project.get("dependencies", []):
+                    if isinstance(item, str):
+                        match = re.match(r"\s*([A-Za-z0-9_.-]+)", item)
+                        if match: add(match.group(1), item, "runtime")
+                optional = project.get("optional-dependencies", {})
+                if isinstance(optional, dict):
+                    for group, values in optional.items():
+                        if isinstance(values, list):
+                            for item in values:
+                                if isinstance(item, str):
+                                    match = re.match(r"\s*([A-Za-z0-9_.-]+)", item)
+                                    if match: add(match.group(1), item, "optional:" + group)
+            poetry = data.get("tool", {}).get("poetry", {}).get("dependencies", {})
+            if isinstance(poetry, dict):
+                for dep_name, requirement in poetry.items():
+                    if dep_name.casefold() != "python":
+                        value = json.dumps(requirement, sort_keys=True) if isinstance(requirement, (dict, list)) else requirement
+                        add(dep_name, value, "poetry")
+        elif name in {"package.json", "composer.json"}:
+            data = json.loads(raw.decode("utf-8"))
+            if isinstance(data, dict):
+                keys = (("dependencies", "runtime"), ("devDependencies", "development"),
+                        ("peerDependencies", "peer"), ("optionalDependencies", "optional")) if name == "package.json" else (("require", "runtime"), ("require-dev", "development"))
+                for key, group in keys:
+                    values = data.get(key, {})
+                    if isinstance(values, dict):
+                        for dep_name, requirement in values.items():
+                            if name != "composer.json" or dep_name != "php": add(dep_name, requirement, group)
+        elif name == "cargo.toml":
+            data = tomllib.loads(raw.decode("utf-8"))
+            for section, group in (("dependencies", "runtime"), ("dev-dependencies", "development"), ("build-dependencies", "build")):
+                values = data.get(section, {})
+                if isinstance(values, dict):
+                    for dep_name, requirement in values.items():
+                        value = json.dumps(requirement, sort_keys=True) if isinstance(requirement, (dict, list)) else requirement
+                        add(dep_name, value, group)
+        elif name == "go.mod":
+            in_require = False
+            for line in raw.decode("utf-8").splitlines():
+                stripped = line.strip()
+                if stripped.startswith("require ("): in_require = True; continue
+                if in_require and stripped == ")": in_require = False; continue
+                if stripped.startswith("require "):
+                    parts = stripped.split()
+                    if len(parts) >= 3: add(parts[1], parts[2], "runtime", "indirect" if "// indirect" in stripped else "declared")
+                elif in_require and stripped and not stripped.startswith("//"):
+                    parts = stripped.split()
+                    if len(parts) >= 2: add(parts[0], parts[1], "runtime", "indirect" if "// indirect" in stripped else "declared")
+        elif name == "requirements.txt":
+            for line in raw.decode("utf-8").splitlines():
+                stripped = line.strip()
+                if not stripped or stripped.startswith(("#", "-", "git+", "http://", "https://")): continue
+                match = re.match(r"^([A-Za-z0-9_.-]+)(.*)$", stripped)
+                if match: add(match.group(1), stripped, "requirements")
+        elif name == "pom.xml":
+            root = ET.fromstring(raw)
+            for dep in root.findall(".//{*}dependency"):
+                group_id = dep.findtext("{*}groupId") or ""
+                artifact_id = dep.findtext("{*}artifactId") or ""
+                version = dep.findtext("{*}version") or "unspecified"
+                scope = dep.findtext("{*}scope") or "compile"
+                if group_id and artifact_id: add(group_id + ":" + artifact_id, version, scope)
+    except (UnicodeDecodeError, ValueError, TypeError, KeyError, AttributeError, RecursionError, ET.ParseError):
+        diagnostics.append({"path": path, "code": "dependency-manifest-parse-error", "severity": "warning"})
+    found.sort(key=lambda item: (item.group.casefold(), item.name.casefold(), item.requirement))
+    return found, diagnostics
+
+
 def analyze_project(snapshot: ProjectSnapshot) -> ProjectAnalysis:
     """Build a deterministic static inventory; never import or execute project source."""
     if not isinstance(snapshot, ProjectSnapshot): raise ProjectContractError("A ProjectSnapshot is required")
     files = []
+    modules, imports, symbols, diagnostics, counts, entry_points, manifest_dependencies = [], [], [], [], {}, [], []
     for entry in snapshot.files:
         language = _LANGUAGES.get(PurePosixPath(entry.path).suffix.casefold())
-        if not language: continue
+        is_manifest = PurePosixPath(entry.path).name.casefold() in _MANIFEST_NAMES and "/" not in entry.path
+        if not language and not is_manifest: continue
         raw = _read_relative_regular_file(snapshot.root, entry.path, entry.size_bytes)
         if hashlib.sha256(raw).hexdigest() != entry.sha256:
             raise ProjectContractError(f"Project file changed after snapshot capture: {entry.path}")
+        if is_manifest:
+            deps, manifest_diags = _manifest_dependencies(entry.path, raw)
+            manifest_dependencies.extend(deps)
+            diagnostics.extend(manifest_diags)
+            continue
         files.append((entry.path, language, raw))
     known = {name for path, lang, _ in files if lang == "python" and (name := _module_name(path))}
-    modules, imports, symbols, diagnostics, counts, entry_points = [], [], [], [], {}, []
     for path, language, raw in files:
         counts[language] = counts.get(language, 0) + 1
         module, status = (_module_name(path), "inventory_only") if language == "python" else (None, "inventory_only")
@@ -297,4 +421,5 @@ def analyze_project(snapshot: ProjectSnapshot) -> ProjectAnalysis:
     diagnostics.sort(key=lambda x: (str(x.get("path", "")).casefold(), int(x.get("line", 0))))
     graph = _dependency_graph(modules, imports, entry_points)
     return ProjectAnalysis(snapshot.fingerprint, len(modules), tuple(sorted(counts.items())),
-        tuple(modules), tuple(imports), tuple(symbols), tuple(diagnostics), graph)
+        tuple(modules), tuple(imports), tuple(symbols), tuple(diagnostics), graph,
+        tuple(sorted(manifest_dependencies, key=lambda item: (item.ecosystem, item.manifest_path, item.group, item.name.casefold(), item.requirement))))

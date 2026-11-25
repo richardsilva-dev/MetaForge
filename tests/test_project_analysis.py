@@ -1,6 +1,6 @@
 from pathlib import Path
 import pytest
-from metaforge.projects import ProjectContractError, analyze_project, capture_project_snapshot
+from metaforge.projects import ProjectContractError, ProjectPatch, analyze_project, capture_project_snapshot
 
 def _project(root: Path):
     (root / "src" / "sample").mkdir(parents=True)
@@ -94,3 +94,85 @@ def test_from_package_import_alias_resolves_submodule_edge(tmp_path):
     assert item["kind"] == "from_alias"
     assert item["resolution"] == "local"
     assert {"source": "sample.consumer", "target": "sample.service"} in report["dependency_graph"]["edges"]
+
+
+def test_analysis_inventories_root_dependency_manifests_without_execution(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    _project(root)
+    (root / "pyproject.toml").write_text(
+        '[project]\nname = "sample"\ndependencies = ["requests>=2.31", "pydantic>=2", "private-lib @ https://user:secret@example.invalid/repo.git"]\n'
+        '[project.optional-dependencies]\ndev = ["pytest>=8"]\n',
+        encoding="utf-8",
+    )
+    (root / "package.json").write_text(
+        '{"dependencies":{"left-pad":"^1.3.0"},"devDependencies":{"vitest":"^2.0.0"}}',
+        encoding="utf-8",
+    )
+    snapshot = capture_project_snapshot(root)
+    report = analyze_project(snapshot).to_dict()
+    dependencies = report["dependency_manifests"]
+    assert {item["name"] for item in dependencies} == {"requests", "pydantic", "private-lib", "pytest", "left-pad", "vitest"}
+    assert any(item["name"] == "requests" and item["group"] == "runtime" for item in dependencies)
+    assert any(item["name"] == "pytest" and item["group"] == "optional:dev" for item in dependencies)
+    assert report["analysis_scope"]["executed_project_code"] is False
+    assert "secret" not in str(dependencies)
+    assert any(item["name"] == "private-lib" and item["requirement"] == "[direct-reference-redacted]" for item in dependencies)
+
+
+def test_malformed_dependency_manifest_is_reported_without_aborting(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    _project(root)
+    (root / "package.json").write_text('{"dependencies":', encoding="utf-8")
+    report = analyze_project(capture_project_snapshot(root)).to_dict()
+    assert any(item["code"] == "dependency-manifest-parse-error" for item in report["diagnostics"])
+
+
+def test_supported_manifest_formats_are_inventory_only(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    _project(root)
+    (root / "Cargo.toml").write_text('[dependencies]\nserde = "1.0"\n[dev-dependencies]\ninsta = "1"\n', encoding="utf-8")
+    (root / "go.mod").write_text('module example.test/app\n\ngo 1.22\nrequire (\n example.test/lib v1.2.3\n example.test/tool v0.4.0 // indirect\n)\n', encoding="utf-8")
+    (root / "requirements.txt").write_text('httpx>=0.27\npytest==8.0\n', encoding="utf-8")
+    (root / "composer.json").write_text('{"require":{"vendor/package":"^1.0"}}', encoding="utf-8")
+    (root / "pom.xml").write_text('<project><dependencies><dependency><groupId>org.example</groupId><artifactId>core</artifactId><version>2.0</version></dependency></dependencies></project>', encoding="utf-8")
+
+    report = analyze_project(capture_project_snapshot(root)).to_dict()
+    dependencies = report["dependency_manifests"]
+
+    assert any(item["ecosystem"] == "rust" and item["name"] == "serde" for item in dependencies)
+    assert any(item["ecosystem"] == "go" and item["source"] == "indirect" for item in dependencies)
+    assert any(item["ecosystem"] == "python" and item["name"] == "httpx" for item in dependencies)
+    assert any(item["ecosystem"] == "php" and item["name"] == "vendor/package" for item in dependencies)
+    assert any(item["ecosystem"] == "maven" and item["name"] == "org.example:core" for item in dependencies)
+
+
+def test_dependency_manifests_remain_protected_from_project_patches():
+    with pytest.raises(ProjectContractError, match="protected"):
+        ProjectPatch.from_dict({
+            "schema_version": "1.0",
+            "rationale": "Do not rewrite dependency declarations",
+            "changes": [{
+                "path": "pyproject.toml",
+                "action": "create",
+                "expected_sha256": None,
+                "content": "[project]",
+            }],
+        })
+
+
+def test_manifest_parser_recursion_error_is_reported(tmp_path, monkeypatch):
+    root = tmp_path / "project"
+    root.mkdir()
+    _project(root)
+    (root / "package.json").write_text("{}", encoding="utf-8")
+
+    def fail_recursively(_value):
+        raise RecursionError("parser recursion limit")
+
+    monkeypatch.setattr("metaforge.projects.analysis.json.loads", fail_recursively)
+    report = analyze_project(capture_project_snapshot(root)).to_dict()
+
+    assert any(item["code"] == "dependency-manifest-parse-error" for item in report["diagnostics"])

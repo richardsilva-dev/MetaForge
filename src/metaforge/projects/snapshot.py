@@ -225,8 +225,9 @@ def capture_project_snapshot(
 ) -> ProjectSnapshot:
     """Capture deterministic hashes of the allow-listed text project surface.
 
-    Hidden paths, dependency/build manifests, binary artifacts, caches, and
-    environments are intentionally excluded. Symlinks and special files
+    Hidden paths, lockfiles, build scripts, binary artifacts, caches, and
+    environments are excluded. A narrow root-only dependency-manifest allow-list
+    is included as read-only metadata. Symlinks and special files
     encountered inside included roots fail closed.
     """
     policy = policy or ProjectPolicy()

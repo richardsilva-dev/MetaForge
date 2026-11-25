@@ -78,6 +78,7 @@ def test_snapshot_is_deterministic_allowlisted_and_does_not_expose_absolute_root
     paths = {item.path for item in first.files}
     assert paths == {
         "README.md",
+        "pyproject.toml",
         "backends/rust/main.rs",
         "docs/design.md",
         "src/pkg/module.py",

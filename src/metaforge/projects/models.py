@@ -12,7 +12,7 @@ from typing import Any
 PATCH_SCHEMA_VERSION = "1.0"
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _ALLOWED_DIRECTORY_ROOTS = frozenset({"src", "tests", "docs", "backends"})
-_ALLOWED_ROOT_FILES = frozenset({"README.md", "CHANGELOG.md", "SECURITY.md", "LICENSE"})
+_ALLOWED_ROOT_FILES = frozenset({"README.md", "CHANGELOG.md", "SECURITY.md", "LICENSE", "pyproject.toml", "package.json", "Cargo.toml", "go.mod", "requirements.txt", "composer.json", "pom.xml"})
 _ALLOWED_TEXT_SUFFIXES = frozenset({
     ".py", ".pyi", ".rs", ".c", ".h", ".cc", ".cpp", ".hpp",
     ".cs", ".fs", ".fsx", ".vb", ".swift", ".scala", ".sc",
@@ -122,7 +122,12 @@ class ProjectSnapshot:
         if paths != sorted(paths) or len(paths) != len(set(paths)):
             raise ProjectContractError("Snapshot manifest must be sorted and path-unique")
         for item in self.files:
-            _validate_project_path(item.path, "create")
+            root_manifest = ("/" not in item.path and item.path.casefold() in {
+                "pyproject.toml", "package.json", "cargo.toml", "go.mod",
+                "requirements.txt", "composer.json", "pom.xml",
+            })
+            if not root_manifest:
+                _validate_project_path(item.path, "create")
         if type(self.total_bytes) is not int or self.total_bytes != sum(
             item.size_bytes for item in self.files
         ):
