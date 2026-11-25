@@ -28,6 +28,8 @@ _trusted_any = any
 _trusted_callable = callable
 _trusted_list_type = list
 _trusted_int_type = int
+_trusted_dict_type = dict
+_trusted_set_type = set
 
 def fail(code):
     raise _trusted_system_exit(code)
