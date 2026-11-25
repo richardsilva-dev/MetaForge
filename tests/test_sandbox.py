@@ -32,15 +32,18 @@ elif args and args[0] == "info":
 elif args[:2] == ["image", "inspect"]:
     raise SystemExit(0)
 elif args and args[0] in ("kill", "rm"):
+    with open(__file__ + ".cleanup", "a", encoding="utf-8") as handle:
+        handle.write(" ".join(args) + "\\n")
     raise SystemExit(0)
 elif args and args[0] == "run":
     cid_arg = next(item for item in args if item.startswith("--cidfile="))
     cid_path = Path(cid_arg.split("=", 1)[1])
     if cid_path.exists():
         raise SystemExit(4)
-    cid_path.write_text("a" * 64, encoding="utf-8")
+    if mode != "timeout_before_cid":
+        cid_path.write_text("a" * 64, encoding="utf-8")
     Path(__file__ + ".args").write_text("\\n".join(args), encoding="utf-8")
-    if mode == "timeout":
+    if mode in ("timeout", "timeout_before_cid"):
         time.sleep(5)
     elif mode == "overflow":
         sys.stdout.write("x" * 4096)
@@ -88,6 +91,7 @@ def test_rootless_sandbox_runs_with_required_isolation_flags(tmp_path):
     assert "--mount=type=bind,source=" in args
     assert ",target=/workspace,readonly" in args
     assert "/workspace/runner.py" in args
+    assert "--name=metaforge-" in args
 
 
 def test_sandbox_fails_closed_when_runtime_is_not_rootless(tmp_path):
@@ -150,3 +154,18 @@ def test_trusted_sandbox_smoke_uses_probe_mode(tmp_path):
     args = Path(str(runtime) + ".args").read_text(encoding="utf-8")
     assert args.rstrip().endswith("1")
     assert len(result.algorithm_samples_seconds) == 2
+
+
+def test_sandbox_timeout_cleans_container_even_before_cidfile_is_written(tmp_path):
+    runtime = _fake_runtime(tmp_path, "timeout_before_cid")
+    runner = SandboxRunner(
+        SandboxPolicy(image=IMAGE, timeout_seconds=0.2), str(runtime)
+    )
+
+    result = runner.run_python("def solve(values): return sorted(values)", [2, 1])
+
+    assert result.success is False
+    assert result.error == "Sandbox execution timed out"
+    cleanup = Path(str(runtime) + ".cleanup").read_text(encoding="utf-8")
+    assert "kill metaforge-" in cleanup
+    assert "rm -f metaforge-" in cleanup
