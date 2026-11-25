@@ -131,7 +131,7 @@ for _ in _trusted_range(repeat_count):
     samples_ns.append(_trusted_max(0, elapsed))
 _trusted_stdout_write(_trusted_json_dumps(
     {"output": result, "samples_ns": samples_ns}, separators=(",", ":")
-) + "\\n")
+) + "\n")
 """
 
 
