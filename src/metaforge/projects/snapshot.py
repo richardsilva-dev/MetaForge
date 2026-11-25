@@ -18,20 +18,6 @@ from metaforge.projects.models import (
 )
 
 
-_TEXT_SUFFIXES = frozenset({
-    ".py", ".pyi", ".rs", ".c", ".h", ".cc", ".cpp", ".hpp",
-    ".md", ".rst", ".txt", ".toml", ".json", ".yaml", ".yml",
-    ".js", ".jsx", ".ts", ".tsx", ".go", ".java", ".kt", ".kts",
-    ".xml", ".html", ".htm", ".css", ".scss", ".sql", ".sh",
-    ".ps1", ".bat", ".cmd", ".ini", ".cfg", ".properties",
-    ".proto", ".gradle", ".mk",
-})
-_IGNORED_DIRECTORIES = frozenset({
-    ".git", ".venv", "venv", "env", "node_modules", "__pycache__",
-    ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox",
-    ".nox", ".artifacts", "build", "dist", "target", "vendor",
-    "site-packages", ".idea", ".vscode",
-})
 
 
 def _read_regular_file(path: Path, max_bytes: int | None = None) -> bytes:
