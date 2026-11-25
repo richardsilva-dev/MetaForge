@@ -297,8 +297,16 @@ def _manifest_dependencies(path: str, raw: bytes) -> tuple[list[ManifestDependen
     found: list[ManifestDependency] = []
     diagnostics: list[dict[str, Any]] = []
     def add(dep_name: Any, requirement: Any, group: str, source: str = "declared") -> None:
-        if isinstance(dep_name, str) and dep_name.strip() and isinstance(requirement, (str, int, float)):
-            found.append(ManifestDependency(path, ecosystem, dep_name.strip(), str(requirement).strip(), group, source))
+        if not isinstance(dep_name, str) or not isinstance(requirement, (str, int, float)):
+            return
+        safe_name = dep_name.strip()
+        safe_requirement = str(requirement).strip()
+        if (not safe_name or len(safe_name) > 256 or len(safe_requirement) > 512
+                or any(ord(char) < 32 for char in safe_name + safe_requirement + group)):
+            return
+        if "://" in safe_requirement or "git+" in safe_requirement.casefold():
+            safe_requirement = "[direct-reference-redacted]"
+        found.append(ManifestDependency(path, ecosystem, safe_name, safe_requirement, group, source))
     try:
         if name == "pyproject.toml":
             data = tomllib.loads(raw.decode("utf-8"))
