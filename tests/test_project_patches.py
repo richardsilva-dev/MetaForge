@@ -1,11 +1,8 @@
 import hashlib
 import json
-import os
-
 import pytest
 
 from metaforge.projects import (
-    FileChange,
     ProjectContractError,
     ProjectPatch,
     ProjectPolicy,
@@ -113,6 +110,7 @@ def test_snapshot_rejects_non_utf8_and_enforces_file_and_byte_budgets(tmp_path):
         capture_project_snapshot(root)
 
     (root / "src" / "bad.py").write_text("x = 1\n", encoding="utf-8")
+    (root / "src" / "second.py").write_text("y = 2\n", encoding="utf-8")
     with pytest.raises(ProjectContractError, match="file-count"):
         capture_project_snapshot(root, ProjectPolicy(max_snapshot_files=1))
     with pytest.raises(ProjectContractError, match="byte limit"):
@@ -159,7 +157,7 @@ def test_patch_schema_rejects_unknown_fields_duplicate_paths_and_bad_actions():
     with pytest.raises(ProjectContractError, match="duplicate"):
         ProjectPatch.from_dict(patch_dict(
             change,
-            {"path": "SRC/pkg/A.py", "action": "create", "content": "x = 2\n"},
+            {"path": "src/pkg/A.py", "action": "create", "content": "x = 2\n"},
         ))
 
     with pytest.raises(ProjectContractError):
