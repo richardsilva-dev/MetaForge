@@ -170,7 +170,7 @@ def main() -> int:
                 allow_unresolved_entrypoints=args.allow_unresolved_entrypoints,
             )
             args.output.parent.mkdir(parents=True, exist_ok=True)
-            args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+            args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         except Exception as exc:
             parser.error(f"project review stopped safely: {type(exc).__name__}: {exc}")
         print(f"Patch accepted: {report['accepted']}")
