@@ -1,6 +1,6 @@
 """Safe project snapshot and structured patch contracts."""
 
-from metaforge.projects.analysis import ExternalDependencyUsage, ManifestDependency, ProjectAnalysis, ProjectImport, ProjectModule, ProjectModuleContract, ProjectSymbol, analyze_project
+from metaforge.projects.analysis import DeclaredEntryPoint, ExternalDependencyUsage, ManifestDependency, ProjectAnalysis, ProjectImport, ProjectModule, ProjectModuleContract, ProjectSymbol, analyze_project
 from metaforge.projects.models import (
     PATCH_SCHEMA_VERSION,
     FileChange,
@@ -21,6 +21,7 @@ from metaforge.projects.secrets import (
 
 __all__ = [
     "PATCH_SCHEMA_VERSION",
+    "DeclaredEntryPoint",
     "ExternalDependencyUsage",
     "ManifestDependency",
     "ProjectAnalysis",
