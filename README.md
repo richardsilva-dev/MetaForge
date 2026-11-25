@@ -128,6 +128,8 @@ Benchmark values are exploratory. Do not claim general performance improvements 
 
 ## Roadmap
 
+The planned language-neutral and project-refactoring architecture is specified in [the multi-language refactoring design](docs/architecture/multilanguage-project-refactoring.md). This is a design target, not a claim that repository-wide refactoring is already available.
+
 - **V0.1–V0.6:** controlled optimizer, agent contracts, provenance/replay, compiled trusted backends, and rootless sandbox.
 - **V0.7:** source-level Python code generation, static review, sandboxed correctness/performance evaluation, lineage, and replay.
 - **V0.8:** adversarial AST-policy hardening, expanded security regressions, statistically stronger benchmark protocols, and experiment-budget/selection improvements.
