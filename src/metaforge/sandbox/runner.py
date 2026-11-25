@@ -30,6 +30,7 @@ _trusted_list_type = list
 _trusted_int_type = int
 _trusted_dict_type = dict
 _trusted_set_type = set
+_trusted_bool_type = bool
 
 def fail(code):
     raise _trusted_system_exit(code)
@@ -110,7 +111,7 @@ if summary is not None:
     for key in ("tests_run", "failures", "errors", "skipped"):
         if _trusted_type(summary[key]) is not _trusted_int_type or summary[key] < 0:
             fail(47)
-    if _trusted_type(summary["successful"]) is not bool:
+    if _trusted_type(summary["successful"]) is not _trusted_bool_type:
         fail(48)
     response["test_summary"] = {
         "tests_run": summary["tests_run"],
