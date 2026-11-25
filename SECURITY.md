@@ -28,6 +28,10 @@ The project PatchSet foundation has a separate set of controls:
 - Patch application re-captures the source, copies only the manifest to a temporary sibling directory, checks file hashes while copying, applies changes atomically, validates the staged snapshot, and installs only into a previously absent destination. The source checkout is never changed.
 - This API does not run candidate code, build scripts, compilers, or tests.
 
+A local heuristic secret scanner is available for the files in a captured project snapshot. It checks common private-key headers, OpenAI-style keys, GitHub tokens, AWS access-key IDs, Google API keys, Slack tokens, JWT-like values, credential assignments, and credentials embedded in URLs. Reports contain only path, line number, rule identifier, and severity; matched values are never serialized. Every scanned file is re-read and its SHA-256 is checked against the snapshot before inspection.
+
+The scanner is a best-effort filter, not a complete secret detector. It can produce false positives and false negatives, and it only scans files included in the snapshot (not excluded hidden folders, binary assets, environments, caches, or build outputs). A report with no findings means only that this ruleset detected no known patterns in the scanned snapshot. It does not prove the project contains no secrets or authorize sending the project to an external model. Human review and a stronger dedicated secret-scanning/redaction gate remain mandatory before any future model-context integration.
+
 ## Explicit non-guarantees
 
 - AST review is not a proof that Python code is safe. Python's dynamic object model makes static allow-lists inherently incomplete.
@@ -43,7 +47,7 @@ The project PatchSet foundation has a separate set of controls:
 
 - Use a disposable VM or dedicated isolated host for high-risk experiments.
 - Keep API keys outside experiment containers and never commit keys, tokens, personal data, or private datasets.
-- Treat project snapshots as sensitive local data. The current implementation does not detect hardcoded credentials embedded in otherwise allow-listed source files; do not transmit these files to external services.
+- Treat project snapshots as sensitive local data. Run the local secret scanner and manually review results, but do not treat a clean heuristic scan as proof of absence or as sufficient authorization to transmit project files.
 - Keep the sandbox image pinned by digest and update it only through reviewed dependency/image changes.
 - Do not disable rootless mode, no-network enforcement, cgroups, read-only mounts, or other sandbox controls to make a failing test pass.
 - Treat any sandbox preflight or smoke failure as a hard stop: no model proposal or candidate execution should occur.
