@@ -85,6 +85,10 @@ def test_review_blocks_public_signature_regressions_by_default(tmp_path):
     assert any(item["kind"] == "signature_changed" and item["name"] == "public"
                for item in report["public_api"]["breaking_changes"])
 
+    explicitly_allowed = review_project_patch(snapshot, patch, allow_breaking_changes=True)
+    assert explicitly_allowed["accepted"] is True
+    assert explicitly_allowed["policy"]["allow_breaking_changes"] is True
+
 
 def test_review_blocks_new_cycles_from_coordinated_multi_file_changes(tmp_path):
     root = tmp_path / "project"
