@@ -479,7 +479,7 @@ def _manifest_dependencies(path: str, raw: bytes) -> tuple[list[ManifestDependen
         module = symbol = None
         if ecosystem == "python":
             normalized = safe_target.split("[", 1)[0].strip()
-            match = re.fullmatch(r"([A-Za-z_]\\w*(?:\\.[A-Za-z_]\\w*)*)(?::([A-Za-z_]\\w*(?:\\.[A-Za-z_]\\w*)*))?", normalized)
+            match = re.fullmatch(r"([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)(?::([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*))?", normalized)
             if match:
                 module, symbol = match.group(1), match.group(2)
         declared_entries.append(DeclaredEntryPoint(
