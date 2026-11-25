@@ -27,8 +27,8 @@ def test_validation_plan_discovers_test_targets_across_ecosystems(tmp_path):
     (root / "tests" / "test_api.py").write_text("import pytest\ndef test_value(): assert True\n", encoding="utf-8")
     (root / "tests" / "sample_test.go").write_text("package sample\n", encoding="utf-8")
     (root / "tests" / "smoke.rs").write_text("#[test]\nfn smoke() {}\n", encoding="utf-8")
-    (root / "web" / "src").mkdir(parents=True)
-    (root / "web" / "src" / "app.test.ts").write_text("describe('app', () => {});\n", encoding="utf-8")
+    (root / "src" / "web").mkdir(parents=True)
+    (root / "src" / "web" / "app.test.ts").write_text("describe('app', () => {});\n", encoding="utf-8")
     (root / "pyproject.toml").write_text(
         '[project]\nname = "sample"\n[project.optional-dependencies]\ntest = ["pytest>=8"]\n',
         encoding="utf-8",
@@ -43,7 +43,7 @@ def test_validation_plan_discovers_test_targets_across_ecosystems(tmp_path):
     assert targets["tests/test_api.py"]["framework_candidates"] == ["pytest"]
     assert targets["tests/sample_test.go"]["framework_candidates"] == ["go_test"]
     assert targets["tests/smoke.rs"]["framework_candidates"] == ["cargo_test"]
-    assert targets["web/src/app.test.ts"]["framework_candidates"] == ["vitest"]
+    assert targets["src/web/app.test.ts"]["framework_candidates"] == ["vitest"]
     assert plan["execution_scope"]["project_code_executed"] is False
     assert plan["execution_scope"]["tests_executed"] is False
     assert all(item["status"] == "not_executed" for item in plan["checks"] if item["name"] in {"test_execution", "runtime_security", "performance"})
