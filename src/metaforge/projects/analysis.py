@@ -632,7 +632,7 @@ def analyze_project(snapshot: ProjectSnapshot) -> ProjectAnalysis:
     """Build a deterministic static inventory; never import or execute project source."""
     if not isinstance(snapshot, ProjectSnapshot): raise ProjectContractError("A ProjectSnapshot is required")
     files = []
-    modules, imports, symbols, diagnostics, counts, entry_points, manifest_dependencies, module_contracts = [], [], [], [], {}, [], [], []
+    modules, imports, symbols, diagnostics, counts, entry_points, manifest_dependencies, module_contracts, declared_entry_points = [], [], [], [], {}, [], [], [], []
     for entry in snapshot.files:
         language = _LANGUAGES.get(PurePosixPath(entry.path).suffix.casefold())
         is_manifest = PurePosixPath(entry.path).name.casefold() in _MANIFEST_NAMES and "/" not in entry.path
@@ -641,8 +641,9 @@ def analyze_project(snapshot: ProjectSnapshot) -> ProjectAnalysis:
         if hashlib.sha256(raw).hexdigest() != entry.sha256:
             raise ProjectContractError(f"Project file changed after snapshot capture: {entry.path}")
         if is_manifest:
-            deps, manifest_diags = _manifest_dependencies(entry.path, raw)
+            deps, manifest_diags, declared = _manifest_dependencies(entry.path, raw)
             manifest_dependencies.extend(deps)
+            declared_entry_points.extend(declared)
             diagnostics.extend(manifest_diags)
             continue
         files.append((entry.path, language, raw))
@@ -671,10 +672,41 @@ def analyze_project(snapshot: ProjectSnapshot) -> ProjectAnalysis:
     imports.sort(key=lambda x: (x.source_path.casefold(), x.line, x.target))
     symbols.sort(key=lambda x: (x.path.casefold(), x.line, x.name))
     diagnostics.sort(key=lambda x: (str(x.get("path", "")).casefold(), int(x.get("line", 0))))
+    module_paths = {item.module_name: item.path for item in modules
+                    if item.language == "python" and item.module_name}
+    module_status = {item.path: item.parse_status for item in modules}
+    symbols_by_path: dict[str, set[str]] = {}
+    for item in symbols:
+        symbols_by_path.setdefault(item.path, set()).add(item.name)
+    resolved_entries = []
+    for item in declared_entry_points:
+        resolution = item.resolution
+        resolved_path = None
+        if item.ecosystem == "python":
+            if item.module is None:
+                resolution = "invalid_target"
+            else:
+                resolved_path = module_paths.get(item.module)
+                if resolved_path is None:
+                    resolution = "module_not_found"
+                elif module_status.get(resolved_path) != "parsed":
+                    resolution = "module_parse_unavailable"
+                elif item.symbol and item.symbol not in symbols_by_path.get(resolved_path, set()):
+                    resolution = "symbol_not_found"
+                else:
+                    resolution = "resolved"
+                    entry_points.append({"path": resolved_path, "module": item.module,
+                                         "kind": "declared_" + item.kind, "name": item.name,
+                                         "target": item.target})
+        resolved_entries.append(DeclaredEntryPoint(
+            item.manifest_path, item.ecosystem, item.name, item.target, item.kind,
+            item.module, item.symbol, resolution, resolved_path,
+        ))
     graph = _dependency_graph(modules, imports, entry_points)
     ordered_manifests = tuple(sorted(manifest_dependencies, key=lambda item: (item.ecosystem, item.manifest_path, item.group, item.name.casefold(), item.requirement)))
     external_usage = _external_dependency_usage(imports, manifest_dependencies)
     module_contracts.sort(key=lambda item: item.path.casefold())
+    resolved_entries.sort(key=lambda item: (item.ecosystem, item.manifest_path, item.kind, item.name.casefold()))
     return ProjectAnalysis(snapshot.fingerprint, len(modules), tuple(sorted(counts.items())),
         tuple(modules), tuple(imports), tuple(symbols), tuple(diagnostics), graph,
-        ordered_manifests, external_usage, tuple(module_contracts))
+        ordered_manifests, external_usage, tuple(module_contracts), tuple(resolved_entries))
