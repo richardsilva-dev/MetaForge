@@ -207,15 +207,15 @@ def test_candidate_worker_cannot_write_to_supervisor_stdout_via_procfs(tmp_path)
     runner_path.write_text(_RUNNER_SOURCE, encoding="utf-8")
     worker_path.write_text(_WORKER_SOURCE, encoding="utf-8")
     candidate_path.write_text(
-        "import os\\n"
-        "def solve(values):\\n"
-        "    try:\\n"
-        "        with open(f'/proc/{os.getppid()}/fd/1', 'w') as stream:\\n"
-        "            stream.write('FORGED-SUPERVISOR-OUTPUT')\\n"
-        "    except OSError:\\n"
-        "        pass\\n"
-        "    values.sort()\\n"
-        "    return values\\n",
+        "import os\n"
+        "def solve(values):\n"
+        "    try:\n"
+        "        with open(f'/proc/{os.getppid()}/fd/1', 'w') as stream:\n"
+        "            stream.write('FORGED-SUPERVISOR-OUTPUT')\n"
+        "    except OSError:\n"
+        "        pass\n"
+        "    values.sort()\n"
+        "    return values\n",
         encoding="utf-8",
     )
     input_path.write_text(json.dumps({"values": [9, 1, 5, 2]}), encoding="utf-8")
