@@ -86,12 +86,13 @@ class ProjectModuleContract:
     module_name: str | None
     declared_all: bool
     exported_names: tuple[str, ...]
+    reexported_names: tuple[str, ...]
     public_symbols: tuple[ProjectSymbol, ...]
     confidence: str
     def to_dict(self) -> dict[str, Any]:
         return {"path": self.path, "module_name": self.module_name,
                 "declared_all": self.declared_all, "exported_names": list(self.exported_names),
-                "public_symbols": [item.to_dict() for item in self.public_symbols],
+                "reexported_names": list(self.reexported_names), "public_symbols": [item.to_dict() for item in self.public_symbols],
                 "confidence": self.confidence}
 
 @dataclass(frozen=True, slots=True)
@@ -248,6 +249,30 @@ def _module_contract(path: str, tree: ast.Module,
         (item for item in symbols if item.path == path),
         key=lambda item: (item.line, item.name),
     ))
+    reexports: set[str] = set()
+    wildcard_reexport = False
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                bound_name = alias.asname or alias.name.split(".", 1)[0]
+                if not bound_name.startswith("_"):
+                    reexports.add(bound_name)
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name == "*":
+                    wildcard_reexport = True
+                    continue
+                bound_name = alias.asname or alias.name
+                if not bound_name.startswith("_"):
+                    reexports.add(bound_name)
+    reexported_names = tuple(sorted(reexports, key=str.casefold))
+    inferred_names = tuple(sorted(
+        {item.name for item in all_public_symbols if item.kind in {"class", "function"}} | reexports,
+        key=str.casefold,
+    ))
+    if wildcard_reexport:
+        diagnostics.append({"path": path, "code": "python-wildcard-reexport-unsupported",
+                            "severity": "warning"})
     if declared and exported is not None and not dynamic:
         names = tuple(dict.fromkeys(exported))
         allowed = set(names)
@@ -257,17 +282,17 @@ def _module_contract(path: str, tree: ast.Module,
                                ))
         confidence = "declared_static_all"
     elif declared:
-        names = tuple(item.name for item in all_public_symbols if item.kind in {"class", "function"})
+        names = inferred_names
         public_symbols = all_public_symbols
         confidence = "dynamic_all_fallback"
         diagnostics.append({"path": path, "code": "python-dynamic-all-unsupported",
                             "severity": "warning"})
     else:
-        names = tuple(item.name for item in all_public_symbols if item.kind in {"class", "function"})
+        names = inferred_names
         public_symbols = all_public_symbols
-        confidence = "inferred_public_definitions"
+        confidence = "inferred_public_definitions_and_imports" if reexports else "inferred_public_definitions"
     return ProjectModuleContract(path, _module_name(path), declared, names,
-                                 public_symbols, confidence), diagnostics
+                                 reexported_names, public_symbols, confidence), diagnostics
 
 
 def _has_main_guard(tree: ast.AST) -> bool:
