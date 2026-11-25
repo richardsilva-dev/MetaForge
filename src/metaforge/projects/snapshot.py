@@ -174,7 +174,7 @@ def _read_regular_file(
         raise ProjectContractError(f"Cannot safely open project file: {path.name}") from exc
     try:
         opened = os.fstat(descriptor)
-        if expected_device is not None and opened.st_dev != expected_device:
+        if os.name != "nt" and expected_device is not None and opened.st_dev != expected_device:
             raise ProjectContractError(f"Project path crosses a filesystem boundary: {path.name}")
         if _is_symlink_or_reparse_point(opened) or not stat.S_ISREG(opened.st_mode):
             raise ProjectContractError(f"Project entries must be regular files: {path.name}")
