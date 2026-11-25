@@ -19,10 +19,10 @@ MetaForge has two separate evaluation paths.
 - Model output is untrusted. A static AST reviewer rejects disallowed imports, file access, stdout calls, dynamic execution, unsafe module-level statements, decorators, defaults, and annotations. This is defense in depth, not a security boundary.
 - The engine requires successful rootless runtime and local pinned-image preflight before it makes any model call.
 - Reviewed source is executed only in a rootless Podman/Docker container. It is never executed on the host.
-- Candidate source, input JSON, and a trusted timing wrapper are mounted read-only. The candidate receives values only through a pure `solve(values)` function.
+- Candidate source, input JSON, a trusted supervisor, and a separate candidate worker are mounted read-only. The supervisor never imports candidate code; each sample runs in a fresh worker interpreter, and the supervisor independently measures process wall time and verifies output.
 - The container has networking disabled, a non-root UID, read-only rootfs, dropped capabilities, no-new-privileges, CPU/memory/PID limits, swap disabled, bounded tmpfs/shared memory, file/descriptor/core limits, output limits, and a wall-clock timeout.
-- The trusted wrapper performs repeated calls with fresh input copies, checks result types and correctness, and measures algorithm time with `perf_counter_ns`. Container startup wall time is reported separately.
-- The host independently validates the wrapper's JSON output and timing sample schema.
+- The trusted supervisor launches a fresh candidate worker for each sample and measures worker wall time with its own `perf_counter_ns`. Samples include Python interpreter startup and IPC overhead; they are conservative end-to-end candidate-process latency, not pure algorithm time. Container startup wall time is reported separately.
+- The host independently validates the supervisor's JSON output and timing sample schema. A worker can still cause bounded denial of service inside the container, but cannot monkeypatch the supervisor clock or serializer.
 - The host API key and other host environment variables are not passed into the container. The model API key is used only by the host-side SDK client.
 
 ## Explicit limitations
