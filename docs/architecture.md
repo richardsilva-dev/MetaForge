@@ -118,3 +118,12 @@ The CLI command is:
 
 The review report is a static regression gate, not a substitute for independent tests,
 security scanning, runtime validation, or performance measurement.
+
+
+To create a separate candidate copy after the default contract review accepts a patch:
+
+    python -m metaforge.cli project apply <project-root> <patch.json> --destination <candidate-directory>
+
+The destination must not already exist. A rejected patch creates no candidate copy.
+The original project is never modified by this command. The candidate is not executed
+or tested; it is a reviewable artifact for subsequent validation.
