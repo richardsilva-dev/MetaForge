@@ -109,9 +109,20 @@ def _parse_python(path: str, raw: bytes, known: set[str]):
                     "local" if local else "external_or_unresolved"))
         elif isinstance(node, ast.ImportFrom):
             target = _relative_target(current, node.level, node.module, PurePosixPath(path).stem == "__init__") if node.level else (node.module or "")
-            local = bool(target) and (target in known or any(x.startswith(target + ".") for x in known))
-            imports.append(ProjectImport(path, target or ".", node.lineno, "from",
-                "local" if local else "external_or_unresolved"))
+            def is_known(name: str) -> bool:
+                return name in known or any(module.startswith(name + ".") for module in known)
+            alias_targets = []
+            for alias in node.names:
+                candidate = f"{target}.{alias.name}" if target else alias.name
+                if alias.name != "*" and is_known(candidate):
+                    alias_targets.append(candidate)
+            if alias_targets:
+                for alias_target in sorted(set(alias_targets)):
+                    imports.append(ProjectImport(path, alias_target, node.lineno, "from_alias", "local"))
+            else:
+                local = bool(target) and is_known(target)
+                imports.append(ProjectImport(path, target or ".", node.lineno, "from",
+                    "local" if local else "external_or_unresolved"))
     for node in tree.body:
         if isinstance(node, ast.ClassDef) and not node.name.startswith("_"):
             bases = "(" + ", ".join(ast.unparse(x) for x in node.bases) + ")" if node.bases else ""
