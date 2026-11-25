@@ -12,6 +12,20 @@ PATCH_SCHEMA_VERSION = "1.0"
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _ALLOWED_DIRECTORY_ROOTS = frozenset({"src", "tests", "docs", "backends"})
 _ALLOWED_ROOT_FILES = frozenset({"README.md", "CHANGELOG.md", "SECURITY.md", "LICENSE"})
+_ALLOWED_TEXT_SUFFIXES = frozenset({
+    ".py", ".pyi", ".rs", ".c", ".h", ".cc", ".cpp", ".hpp",
+    ".md", ".rst", ".txt", ".toml", ".json", ".yaml", ".yml",
+    ".js", ".jsx", ".ts", ".tsx", ".go", ".java", ".kt", ".kts",
+    ".xml", ".html", ".htm", ".css", ".scss", ".sql", ".sh",
+    ".ps1", ".bat", ".cmd", ".ini", ".cfg", ".properties",
+    ".proto", ".gradle", ".mk",
+})
+_IGNORED_DIRECTORY_NAMES = frozenset({
+    ".git", ".venv", "venv", "env", "node_modules", "__pycache__",
+    ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", ".nox",
+    ".artifacts", "build", "dist", "target", "vendor", "site-packages",
+    ".idea", ".vscode",
+})
 _PROTECTED_BASENAMES = frozenset({
     "pyproject.toml", "setup.py", "setup.cfg", "tox.ini", "noxfile.py",
     "cargo.toml", "cargo.lock", "package.json", "package-lock.json",
@@ -113,7 +127,7 @@ class FileChange:
     def __post_init__(self) -> None:
         if not isinstance(self.path, str):
             raise ProjectContractError("Patch path must be text")
-        if self.action not in {"create", "replace", "delete"}:
+        if not isinstance(self.action, str) or self.action not in {"create", "replace", "delete"}:
             raise ProjectContractError("Patch action must be create, replace, or delete")
         if self.action == "create":
             if self.expected_sha256 is not None or not isinstance(self.content, str):
@@ -189,7 +203,10 @@ class ProjectPatch:
                 "path", "action", "expected_sha256", "content"
             }:
                 raise ProjectContractError(f"Change {index} has an invalid shape")
-            change = FileChange(**raw)
+            try:
+                change = FileChange(**raw)
+            except TypeError as exc:
+                raise ProjectContractError(f"Change {index} has invalid field values") from exc
             _validate_project_path(change.path, change.action)
             if change.content is not None:
                 try:
@@ -222,8 +239,12 @@ def _validate_project_path(path: str, action: str) -> str:
     parts = path.split("/")
     if any(part in {"", ".", ".."} for part in parts):
         raise ProjectContractError("Patch path traversal or empty path components are forbidden")
-    if any(part.startswith(".") or part.endswith((".", " ")) for part in parts):
-        raise ProjectContractError("Hidden paths and trailing dots or spaces are forbidden")
+    if any(
+        part.startswith(".") or part.endswith((".", " "))
+        or part in _IGNORED_DIRECTORY_NAMES
+        for part in parts
+    ):
+        raise ProjectContractError("Hidden, generated, and excluded paths are forbidden")
     if any(part.split(".", 1)[0].upper() in _WINDOWS_RESERVED_NAMES for part in parts):
         raise ProjectContractError("Windows reserved device names are forbidden")
     if parts[0] not in _ALLOWED_DIRECTORY_ROOTS and path not in _ALLOWED_ROOT_FILES:
@@ -232,6 +253,8 @@ def _validate_project_path(path: str, action: str) -> str:
         raise ProjectContractError("Dependency, build, and execution configuration files are protected")
     if path.casefold().endswith((".lock", ".pem", ".key", ".p12", ".pfx")):
         raise ProjectContractError("Lockfiles and secret/key files are protected")
+    if path not in _ALLOWED_ROOT_FILES and PurePosixPath(path).suffix.casefold() not in _ALLOWED_TEXT_SUFFIXES:
+        raise ProjectContractError("Only allow-listed text source/documentation file types may be patched")
     if parts[0] == "tests" and action != "create":
         raise ProjectContractError("Existing acceptance tests are immutable; new tests may only be added")
     return str(PurePosixPath(path))
