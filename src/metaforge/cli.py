@@ -268,7 +268,7 @@ def main() -> int:
             parser.error(f"project validation planning stopped safely: {type(exc).__name__}: {exc}")
         print(f"Test targets discovered: {report['risk_summary']['test_targets']}")
         print(f"Dependency cycles: {report['risk_summary']['dependency_cycles']}")
-        print(f"Unresolved imports: {report['risk_summary']['unresolved_imports']}")
+        print(f"External or unresolved imports: {report['risk_summary']['external_or_unresolved_imports']}")
         print(f"Secret findings: {report['risk_summary']['secret_findings']}")
         print("Project code executed: False")
         print(f"Report: {args.output}")
