@@ -251,10 +251,11 @@ def _parse_python(path: str, raw: bytes, known: set[str]):
                 (keyword.value for keyword in node.keywords if keyword.arg == "package"), None
             )
             package = _literal_string(package_node) if package_node is not None else None
-            if package and isinstance(node.func, (ast.Name, ast.Attribute)) and not (
-                isinstance(node.func, ast.Name) and node.func.id == "__import__"
-            ):
-                level = len(target) - len(target.lstrip("."))
+            level = len(target) - len(target.lstrip("."))
+            if (package and level <= len(package.split("."))
+                    and isinstance(node.func, (ast.Name, ast.Attribute)) and not (
+                        isinstance(node.func, ast.Name) and node.func.id == "__import__"
+                    )):
                 target = _relative_target(package, level, target.lstrip("."), True)
             else:
                 imports.append(ProjectImport(path, target, node.lineno, "dynamic_import", "relative_unresolved"))
