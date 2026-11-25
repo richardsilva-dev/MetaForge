@@ -1,5 +1,3 @@
-import hashlib
-
 import pytest
 
 from metaforge.projects import ProjectContractError, capture_project_snapshot
@@ -66,13 +64,14 @@ def test_secret_scan_ignores_common_placeholders_and_environment_references(tmp_
             'client_secret = os.getenv("CLIENT_SECRET")',
             'auth_token = process.env.AUTH_TOKEN',
             'private_key = None',
+            'SECRET = "standalone-secret-value-987"',
         ]),
         encoding="utf-8",
     )
     report = scan_project_secrets(capture_project_snapshot(root))
 
-    assert report.no_detected_secrets is True
-    assert report.findings == ()
+    assert report.no_detected_secrets is False
+    assert any(item.rule_id == "credential-assignment" for item in report.findings)
 
 
 def test_secret_scan_detects_private_key_header(tmp_path):
@@ -120,3 +119,11 @@ def test_secret_scan_policy_rejects_boolean_and_out_of_range_budget():
         SecretScanPolicy(max_findings=True)
     with pytest.raises(ProjectContractError):
         SecretScanPolicy(max_findings=0)
+
+
+def test_empty_snapshot_does_not_pass_secret_scan_gate(tmp_path):
+    root = tmp_path / "empty-project"
+    root.mkdir()
+    report = scan_project_secrets(capture_project_snapshot(root))
+    assert report.files_scanned == 0
+    assert report.no_detected_secrets is False
