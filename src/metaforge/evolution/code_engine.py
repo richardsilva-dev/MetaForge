@@ -509,8 +509,9 @@ class CodeEvolutionEngine:
                 "low-cardinality, organ-pipe, and all-equal inputs. Each workload receives the "
                 "same repeat count; the aggregate score is the median of per-workload medians, "
                 "giving every workload equal weight. Raw samples and per-workload medians are "
-                "retained. Algorithm samples are measured inside the trusted container wrapper "
-                "with perf_counter_ns. Container wall time is reported separately and is not used "
-                "for candidate ranking."
+                "retained. Each sample is measured by the trusted container supervisor around a fresh "
+                "candidate-worker process, including interpreter startup and IPC overhead; samples "
+                "are not pure algorithm-only timings. Container wall time is reported separately "
+                "and is not used for candidate ranking."
             ),
         }
