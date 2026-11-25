@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -536,6 +537,83 @@ class SandboxRunner:
             timeout_seconds=timeout_seconds,
             repeats=2,
             smoke_probe=True,
+        )
+
+    def run_project_unittest(
+        self,
+        snapshot: Any,
+        timeout_seconds: float | None = None,
+    ) -> ProjectTestExecutionResult:
+        """Run only statically identified unittest suites inside the rootless sandbox."""
+        started = time.perf_counter()
+        scope = "rootless_container_external_candidate_process_wall_time_including_startup"
+        from metaforge.projects.models import ProjectSnapshot
+        from metaforge.projects.snapshot import _read_relative_regular_file, capture_project_snapshot
+        from metaforge.projects.analysis import analyze_project
+        from metaforge.projects.validation import build_validation_plan
+
+        if not isinstance(snapshot, ProjectSnapshot):
+            return ProjectTestExecutionResult(False, False, 0, 0, 0, 0, 0.0, "not_executed",
+                                              "A ProjectSnapshot is required")
+        try:
+            current = capture_project_snapshot(snapshot.root)
+            if current.fingerprint != snapshot.fingerprint:
+                raise ValueError("Project snapshot changed before sandbox staging")
+            analysis = analyze_project(snapshot)
+            plan = build_validation_plan(snapshot, analysis)
+        except Exception:
+            return ProjectTestExecutionResult(False, False, 0, 0, 0, 0, 0.0, "not_executed",
+                                              "Project preflight failed")
+
+        python_targets = [item for item in plan["test_targets"] if item["ecosystem"] == "python"]
+        if not python_targets or any(item["framework_candidates"] != ["unittest"] for item in python_targets):
+            return ProjectTestExecutionResult(False, False, 0, 0, 0, 0, 0.0, "not_executed",
+                                              "Only explicitly identified Python unittest suites are supported")
+        if any(not item["path"].startswith("tests/") for item in python_targets):
+            return ProjectTestExecutionResult(False, False, 0, 0, 0, 0.0, "not_executed",
+                                              "Python unittest files must be under tests/")
+        file_paths = {entry.path for entry in snapshot.files}
+        for item in python_targets:
+            parent = PurePosixPath(item["path"]).parent
+            while str(parent) != "tests":
+                if f"{parent}/__init__.py" not in file_paths:
+                    return ProjectTestExecutionResult(False, False, 0, 0, 0, 0.0, "not_executed",
+                                                      "Nested unittest directories must be Python packages")
+                parent = parent.parent
+
+        additional_files: dict[str, bytes] = {}
+        total_bytes = 0
+        try:
+            for entry in snapshot.files:
+                raw = _read_relative_regular_file(snapshot.root, entry.path, self.policy.max_project_bytes)
+                if len(raw) != entry.size_bytes or hashlib.sha256(raw).hexdigest() != entry.sha256:
+                    raise ValueError("Snapshot file changed during staging")
+                total_bytes += len(raw)
+                if total_bytes > self.policy.max_project_bytes:
+                    raise ValueError("Project workspace size limit exceeded")
+                additional_files[entry.path] = raw
+        except Exception:
+            return ProjectTestExecutionResult(False, False, 0, 0, 0, 0, 0.0, "not_executed",
+                                              "Project snapshot could not be staged safely")
+
+        sandbox_result = self.run_python(
+            _PROJECT_UNITTEST_SOURCE,
+            [],
+            timeout_seconds=timeout_seconds,
+            repeats=1,
+            additional_files=additional_files,
+        )
+        if not sandbox_result.success or sandbox_result.test_summary is None:
+            return ProjectTestExecutionResult(
+                True, False, 0, 0, 0, 0, sandbox_result.wall_seconds, scope,
+                "Sandboxed unittest execution failed or returned an invalid summary",
+            )
+        summary = sandbox_result.test_summary
+        successful = bool(summary["successful"]) and summary["tests_run"] > 0
+        return ProjectTestExecutionResult(
+            True, successful, int(summary["tests_run"]), int(summary["failures"]),
+            int(summary["errors"]), int(summary["skipped"]), sandbox_result.wall_seconds,
+            scope, None if successful else "One or more tests failed or no tests were discovered",
         )
 
     def run_python(
