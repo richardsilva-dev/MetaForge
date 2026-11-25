@@ -149,6 +149,11 @@ def test_snapshot_rejects_non_utf8_and_enforces_file_and_byte_budgets(tmp_path):
         "src/pkg/private.pem",
         "src/pkg/COM1.py",
         "src/pkg/file.exe",
+        "src/scripts/run.sh",
+        "src/scripts/run.ps1",
+        "src/pkg/go.mod",
+        "src/pkg/build.gradle.kts",
+        "src/pkg/Package.swift",
         "src/pkg/trailing.py ",
         "src//double.py",
         "src/node_modules/pkg.py",
@@ -160,6 +165,20 @@ def test_patch_schema_rejects_unsafe_or_out_of_scope_paths(path):
         ProjectPatch.from_dict(patch_dict({
             "path": path, "action": "create", "content": "value = 1\n"
         }))
+
+
+@pytest.mark.parametrize("path", [
+    "src/pkg/Example.cs",
+    "src/pkg/main.rs",
+    "src/pkg/main.go",
+    "src/pkg/Main.kt",
+    "src/pkg/index.ts",
+])
+def test_patch_contract_accepts_allowlisted_multilanguage_source_files(path):
+    patch = ProjectPatch.from_dict(patch_dict({
+        "path": path, "action": "create", "content": "// candidate source\\n"
+    }))
+    assert patch.changes[0].path == path
 
 
 def test_patch_schema_rejects_unknown_fields_duplicate_paths_and_bad_actions():
