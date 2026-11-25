@@ -22,6 +22,7 @@ MetaForge has two separate evaluation paths.
 - Candidate source, input JSON, a trusted supervisor, and a separate candidate worker are mounted read-only. The supervisor never imports candidate code; each sample runs in a fresh worker interpreter.
 - The container has networking disabled, a non-root UID, read-only rootfs, dropped capabilities, no-new-privileges, CPU/memory/PID limits, swap disabled, bounded tmpfs/shared memory, file/descriptor/core limits, output limits, and a wall-clock timeout.
 - The worker installs a Linux seccomp filter before loading candidate source. It denies process-signal syscalls, ptrace, pidfd signal/descriptor access, and cross-process memory syscalls; unsupported architectures or filter-installation failures stop execution.
+- The supervisor drains candidate stdout/stderr incrementally and terminates the worker process group as soon as either bounded output budget is exceeded; it does not buffer untrusted output without a cap.
 - The supervisor measures each worker's end-to-end process lifetime with its own monotonic clock and independently checks the worker result against the expected output. Samples include interpreter startup and IPC overhead; they are not pure algorithm-only timings. Container startup wall time is reported separately.
 - The host independently validates the supervisor's JSON output and timing sample schema.
 - The host API key and other host environment variables are not passed into the container. The model API key is used only by the host-side SDK client.
