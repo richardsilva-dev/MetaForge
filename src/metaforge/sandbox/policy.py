@@ -19,6 +19,8 @@ class SandboxPolicy:
     max_source_bytes: int = 256_000
     max_input_items: int = 100_000
     max_output_bytes: int = 1_000_000
+    max_project_files: int = 2_000
+    max_project_bytes: int = 20_000_000
 
     def __post_init__(self) -> None:
         if not isinstance(self.image, str) or not _IMAGE_DIGEST.fullmatch(self.image):
@@ -41,3 +43,7 @@ class SandboxPolicy:
             raise ValueError("Input item limit must be 0..100000")
         if type(self.max_output_bytes) is not int or not 1024 <= self.max_output_bytes <= 1_000_000:
             raise ValueError("Output limit must be 1024..1000000 bytes")
+        if type(self.max_project_files) is not int or not 1 <= self.max_project_files <= 10_000:
+            raise ValueError("Project file limit must be 1..10000")
+        if type(self.max_project_bytes) is not int or not 1024 <= self.max_project_bytes <= 100_000_000:
+            raise ValueError("Project byte limit must be 1024..100000000")
