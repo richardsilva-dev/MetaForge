@@ -291,13 +291,13 @@ def test_patch_apply_create_replace_and_delete_on_new_copy_only(tmp_path):
         {
             "path": "src/pkg/module.py",
             "action": "replace",
-            "expected_sha256": digest(old_source),
+            "expected_sha256": source_snapshot.file_map["src/pkg/module.py"].sha256,
             "content": "def value():\n    return 2\n",
         },
         {
             "path": "docs/design.md",
             "action": "delete",
-            "expected_sha256": digest(old_docs),
+            "expected_sha256": source_snapshot.file_map["docs/design.md"].sha256,
         },
         {
             "path": "src/pkg/new_module.py",
