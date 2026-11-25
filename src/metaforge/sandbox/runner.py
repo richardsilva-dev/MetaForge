@@ -391,6 +391,7 @@ class SandboxPreparation:
 @dataclass(frozen=True, slots=True)
 class ProjectTestExecutionResult:
     supported: bool
+    executed: bool
     success: bool
     tests_run: int
     failures: int
@@ -553,7 +554,7 @@ class SandboxRunner:
         from metaforge.projects.validation import build_validation_plan
 
         if not isinstance(snapshot, ProjectSnapshot):
-            return ProjectTestExecutionResult(False, False, 0, 0, 0, 0, 0.0, "not_executed",
+            return ProjectTestExecutionResult(False, False, False, 0, 0, 0, 0, 0.0, "not_executed",
                                               "A ProjectSnapshot is required")
         try:
             current = capture_project_snapshot(snapshot.root)
@@ -605,13 +606,13 @@ class SandboxRunner:
         )
         if not sandbox_result.success or sandbox_result.test_summary is None:
             return ProjectTestExecutionResult(
-                True, False, 0, 0, 0, 0, sandbox_result.wall_seconds, scope,
+                True, False, False, 0, 0, 0, 0, sandbox_result.wall_seconds, scope,
                 "Sandboxed unittest execution failed or returned an invalid summary",
             )
         summary = sandbox_result.test_summary
         successful = bool(summary["successful"]) and summary["tests_run"] > 0
         return ProjectTestExecutionResult(
-            True, successful, int(summary["tests_run"]), int(summary["failures"]),
+            True, True, successful, int(summary["tests_run"]), int(summary["failures"]),
             int(summary["errors"]), int(summary["skipped"]), sandbox_result.wall_seconds,
             scope, None if successful else "One or more tests failed or no tests were discovered",
         )
