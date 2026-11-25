@@ -16,12 +16,12 @@ _ALLOWED_ROOT_FILES = frozenset({"README.md", "CHANGELOG.md", "SECURITY.md", "LI
 _ALLOWED_TEXT_SUFFIXES = frozenset({
     ".py", ".pyi", ".rs", ".c", ".h", ".cc", ".cpp", ".hpp",
     ".cs", ".fs", ".fsx", ".vb", ".swift", ".scala", ".sc",
-    ".js", ".jsx", ".ts", ".tsx", ".go", ".java", ".kt", ".kts",
+    ".js", ".jsx", ".ts", ".tsx", ".go", ".java", ".kt",
     ".rb", ".php", ".lua", ".dart", ".ex", ".exs", ".erl", ".hrl",
     ".hs", ".lhs", ".ml", ".mli", ".m", ".mm", ".r", ".jl", ".pl", ".pm",
     ".md", ".rst", ".txt", ".toml", ".json", ".yaml", ".yml",
     ".xml", ".html", ".htm", ".css", ".scss", ".sql", ".ini", ".cfg",
-    ".properties", ".proto", ".gradle.kts",
+    ".properties", ".proto",
 })
 _IGNORED_DIRECTORY_NAMES = frozenset({
     ".git", ".venv", "venv", "env", "node_modules", "__pycache__",
@@ -41,7 +41,7 @@ _PROTECTED_BASENAMES = frozenset({
     "justfile", "taskfile.yml", "deno.json", "deno.jsonc",
     "bun.lock", "bun.lockb", "pnpm-workspace.yaml", "gradlew", "mvnw",
     "package.swift", "package.resolved", "build.zig", "build.zig.zon",
-    "requirements.txt", "pipfile", "pipfile.lock", "dockerfile",
+    "dockerfile",
     "containerfile", "makefile", ".gitignore",
 })
 _WINDOWS_RESERVED_NAMES = frozenset({
@@ -287,7 +287,7 @@ def _validate_project_path(path: str, action: str) -> str:
         raise ProjectContractError("Dependency, build, and execution configuration files are protected")
     if path.casefold().endswith((
         ".lock", ".pem", ".key", ".p12", ".pfx", ".sh", ".ps1",
-        ".bat", ".cmd", ".cmake", ".csproj", ".sln", ".props",
+        ".bat", ".cmd", ".kts", ".cmake", ".csproj", ".sln", ".props",
         ".targets", ".vbproj", ".fsproj",
     )):
         raise ProjectContractError("Lockfiles, secret files, scripts, and build manifests are protected")
