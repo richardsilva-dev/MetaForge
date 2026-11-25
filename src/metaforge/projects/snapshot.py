@@ -60,19 +60,23 @@ def _read_relative_regular_file(
         try:
             root_descriptor = os.open(root, directory_flags)
             descriptors.append(root_descriptor)
+            if os.fstat(root_descriptor).st_dev != root_metadata.st_dev:
+                raise ProjectContractError("Snapshot root filesystem changed during access")
             current_descriptor = root_descriptor
             for component in parts[:-1]:
                 next_descriptor = os.open(
                     component, directory_flags, dir_fd=current_descriptor
                 )
                 descriptors.append(next_descriptor)
+                if os.fstat(next_descriptor).st_dev != root_metadata.st_dev:
+                    raise ProjectContractError("Project path crosses a filesystem boundary")
                 current_descriptor = next_descriptor
             file_descriptor = os.open(
                 parts[-1], file_flags | getattr(os, "O_BINARY", 0),
                 dir_fd=current_descriptor,
             )
             descriptors.append(file_descriptor)
-            return _read_open_descriptor(file_descriptor, relative_path, max_bytes)
+            return _read_open_descriptor(file_descriptor, relative_path, max_bytes, root_metadata.st_dev)
         except OSError as exc:
             raise ProjectContractError(
                 f"Cannot safely open project path without following symlinks: {relative_path}"
@@ -90,15 +94,20 @@ def _read_relative_regular_file(
             raise ProjectContractError(f"Cannot inspect project path: {relative_path}") from exc
         if _is_symlink_or_reparse_point(metadata) or not stat.S_ISDIR(metadata.st_mode):
             raise ProjectContractError(f"Project path has a symlink or non-directory parent: {relative_path}")
-    return _read_regular_file(current / parts[-1], max_bytes)
+        if metadata.st_dev != root_metadata.st_dev:
+            raise ProjectContractError("Project path crosses a filesystem boundary")
+    return _read_regular_file(current / parts[-1], max_bytes, root_metadata.st_dev)
 
 
 def _read_open_descriptor(
     descriptor: int,
     display_path: str,
     max_bytes: int | None = None,
+    expected_device: int | None = None,
 ) -> bytes:
     opened = os.fstat(descriptor)
+    if expected_device is not None and opened.st_dev != expected_device:
+        raise ProjectContractError(f"Project path crosses a filesystem boundary: {display_path}")
     if not stat.S_ISREG(opened.st_mode):
         raise ProjectContractError(f"Project entries must be regular files: {display_path}")
     if max_bytes is not None and opened.st_size > max_bytes:
@@ -125,7 +134,11 @@ def _read_open_descriptor(
         raise ProjectContractError(f"Project file changed while being read: {display_path}")
     return b"".join(chunks)
 
-def _read_regular_file(path: Path, max_bytes: int | None = None) -> bytes:
+def _read_regular_file(
+    path: Path,
+    max_bytes: int | None = None,
+    expected_device: int | None = None,
+) -> bytes:
     """Read a regular file without following a final-component symlink."""
     try:
         before = path.lstat()
@@ -143,6 +156,8 @@ def _read_regular_file(path: Path, max_bytes: int | None = None) -> bytes:
         raise ProjectContractError(f"Cannot safely open project file: {path.name}") from exc
     try:
         opened = os.fstat(descriptor)
+        if expected_device is not None and opened.st_dev != expected_device:
+            raise ProjectContractError(f"Project path crosses a filesystem boundary: {path.name}")
         if _is_symlink_or_reparse_point(opened) or not stat.S_ISREG(opened.st_mode):
             raise ProjectContractError(f"Project entries must be regular files: {path.name}")
         if (
@@ -213,6 +228,7 @@ def capture_project_snapshot(
     entries: list[SnapshotFile] = []
     total_bytes = 0
     visited_entries = 0
+    root_device = root_stat.st_dev
 
     def add_file(relative: str) -> None:
         nonlocal total_bytes
@@ -248,10 +264,12 @@ def capture_project_snapshot(
             raise ProjectContractError(f"Cannot inspect project root: {directory_name}") from exc
         if _is_symlink_or_reparse_point(metadata) or not stat.S_ISDIR(metadata.st_mode):
             raise ProjectContractError(f"Allow-listed project root must be a real directory: {directory_name}")
+        if metadata.st_dev != root_device or os.path.ismount(start):
+            raise ProjectContractError(f"Allow-listed project root crosses a filesystem boundary: {directory_name}")
 
-        stack = [start]
+        stack = [(start, 0)]
         while stack:
-            current = stack.pop()
+            current, depth = stack.pop()
             try:
                 children = []
                 with os.scandir(current) as iterator:
@@ -277,7 +295,13 @@ def capture_project_snapshot(
                             f"Symlinks and junctions are forbidden inside snapshot roots: {child.name}"
                         )
                     if stat.S_ISDIR(child_metadata.st_mode):
-                        subdirectories.append(child_path)
+                        if child_metadata.st_dev != root_device or os.path.ismount(child_path):
+                            raise ProjectContractError(
+                                f"Filesystem mount points are forbidden inside snapshot roots: {child.name}"
+                            )
+                        if depth + 1 > policy.max_snapshot_depth:
+                            raise ProjectContractError("Project snapshot directory-depth limit exceeded")
+                        subdirectories.append((child_path, depth + 1))
                         continue
                     if not stat.S_ISREG(child_metadata.st_mode):
                         raise ProjectContractError(
