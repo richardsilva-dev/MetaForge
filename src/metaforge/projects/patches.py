@@ -181,9 +181,11 @@ def apply_patch_to_copy(
 
     The source is re-snapshotted before copying and every copied file is hashed
     again. The destination must not exist. All writes occur in a temporary
-    sibling directory and are atomically renamed into place only after the
-    complete staged snapshot is valid. No candidate code, build, or test
-    command is executed by this function.
+    sibling directory and are atomically installed without replacing an existing
+    destination only after the complete staged snapshot is valid. If final
+    post-install validation fails, the published path is preserved for inspection
+    rather than recursively deleting a path that may have been concurrently replaced.
+    No candidate code, build, or test command is executed by this function.
     """
     policy = policy or ProjectPolicy()
     if not isinstance(policy, ProjectPolicy):
@@ -223,7 +225,6 @@ def apply_patch_to_copy(
     _verify_non_overlapping_roots(source_root, target_root.resolve(strict=False))
 
     stage = Path(tempfile.mkdtemp(prefix=f".{target_root.name}.metaforge-", dir=parent))
-    installed = False
     try:
         for entry in snapshot.files:
             target = stage / PurePosixPath(entry.path)
@@ -258,15 +259,10 @@ def apply_patch_to_copy(
         # Validate the staged tree before making it visible as the destination.
         staged_snapshot = capture_project_snapshot(stage, policy)
         _rename_directory_no_replace(stage, target_root)
-        installed = True
         final_snapshot = capture_project_snapshot(target_root, policy)
         if final_snapshot.fingerprint != staged_snapshot.fingerprint:
             raise ProjectContractError("Installed project snapshot changed during finalization")
         return final_snapshot
-    except Exception:
-        if installed:
-            shutil.rmtree(target_root, ignore_errors=True)
-        raise
     finally:
         if stage.exists():
             shutil.rmtree(stage, ignore_errors=True)
