@@ -14,7 +14,10 @@ from metaforge.agents.code_safety import CodeReviewResult, StaticCodeReviewer
 from metaforge.agents.contracts import AgentResult, AgentTask
 from metaforge.sandbox.runner import SandboxPreparation, SandboxResult, SandboxRunner
 from metaforge.evolution.metadata import runtime_metadata
-from metaforge.evolution.benchmark_selection import passes_baseline_gate
+from metaforge.evolution.benchmark_selection import (
+    MINIMUM_PROMOTION_REPEATS,
+    passes_baseline_gate,
+)
 from metaforge.evolution.workloads import (
     INTEGER_SORT_SUITE_NAME,
     INTEGER_SORT_SUITE_VERSION,
@@ -468,6 +471,7 @@ class CodeEvolutionEngine:
             "selection": {
                 "policy": "baseline_gated_minimum_relative_improvement",
                 "minimum_improvement_ratio": self.MIN_IMPROVEMENT_RATIO,
+                "minimum_repeats_for_promotion": MINIMUM_PROMOTION_REPEATS,
                 "baseline_median_seconds": baseline_score,
                 "selected_median_seconds": best_score,
                 "selected_source": "candidate" if best_is_candidate else "trusted_baseline",
