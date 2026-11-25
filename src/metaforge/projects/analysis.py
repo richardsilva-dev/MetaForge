@@ -145,13 +145,13 @@ def _parse_python(path: str, raw: bytes, known: set[str]):
     try:
         tree = ast.parse(raw.decode("utf-8"), filename=path, type_comments=True)
     except UnicodeDecodeError:
-        return imports, symbols, "invalid_utf8", [{"path": path, "code": "python-invalid-utf8", "severity": "error"}]
+        return imports, symbols, "invalid_utf8", [{"path": path, "code": "python-invalid-utf8", "severity": "error"}], None
     except SyntaxError as exc:
         return imports, symbols, "syntax_error", [{"path": path, "code": "python-syntax-error",
-            "severity": "warning", "line": exc.lineno or 1}]
+            "severity": "warning", "line": exc.lineno or 1}], None
     except RecursionError:
         return imports, symbols, "resource_limit", [{"path": path, "code": "python-ast-recursion-limit",
-            "severity": "error"}]
+            "severity": "error"}], None
     current = _module_name(path)
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -196,7 +196,7 @@ def _parse_python(path: str, raw: bytes, known: set[str]):
             sig = f"{prefix}def {node.name}({ast.unparse(node.args)})"
             if node.returns: sig += f" -> {ast.unparse(node.returns)}"
             symbols.append(ProjectSymbol(path, node.name, "function", node.lineno, sig))
-    return imports, symbols, "parsed", diagnostics
+    return imports, symbols, "parsed", diagnostics, tree
 
 
 
@@ -211,9 +211,8 @@ def _literal_string_sequence(node: ast.AST | None) -> tuple[str, ...] | None:
     return tuple(values)
 
 
-def _module_contract(path: str, raw: bytes,
+def _module_contract(path: str, tree: ast.Module,
                      symbols: list[ProjectSymbol]) -> tuple[ProjectModuleContract, list[dict[str, Any]]]:
-    tree = ast.parse(raw.decode("utf-8"), filename=path, type_comments=True)
     declared = False
     dynamic = False
     exported: tuple[str, ...] | None = None
@@ -550,21 +549,17 @@ def analyze_project(snapshot: ProjectSnapshot) -> ProjectAnalysis:
         counts[language] = counts.get(language, 0) + 1
         module, status = (_module_name(path), "inventory_only") if language == "python" else (None, "inventory_only")
         if language == "python":
-            imps, syms, status, diags = _parse_python(path, raw, known)
+            imps, syms, status, diags, tree = _parse_python(path, raw, known)
             imports.extend(imps); symbols.extend(syms); diagnostics.extend(diags)
             if status == "parsed":
-                contract, contract_diags = _module_contract(path, raw, syms)
+                contract, contract_diags = _module_contract(path, tree, syms)
                 module_contracts.append(contract)
                 diagnostics.extend(contract_diags)
             if status == "parsed":
-                try:
-                    tree = ast.parse(raw.decode("utf-8"), filename=path, type_comments=True)
-                    if PurePosixPath(path).name == "__main__.py":
-                        entry_points.append({"path": path, "module": (_module_name(path) or "").removesuffix(".__main__"), "kind": "python_module"})
-                    if _has_main_guard(tree):
-                        entry_points.append({"path": path, "module": _module_name(path), "kind": "main_guard"})
-                except (SyntaxError, RecursionError, UnicodeDecodeError):
-                    pass
+                if PurePosixPath(path).name == "__main__.py":
+                    entry_points.append({"path": path, "module": (_module_name(path) or "").removesuffix(".__main__"), "kind": "python_module"})
+                if _has_main_guard(tree):
+                    entry_points.append({"path": path, "module": _module_name(path), "kind": "main_guard"})
         modules.append(ProjectModule(path, language, module, hashlib.sha256(raw).hexdigest(), len(raw), status))
     modules.sort(key=lambda x: x.path.casefold())
     imports.sort(key=lambda x: (x.source_path.casefold(), x.line, x.target))
