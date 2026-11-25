@@ -385,3 +385,21 @@ def test_patch_application_refuses_existing_destination_and_overlap(tmp_path):
         apply_patch_to_copy(snapshot, patch, existing)
     with pytest.raises(ProjectContractError, match="overlap"):
         apply_patch_to_copy(snapshot, patch, root / "nested")
+
+
+def test_validate_patch_rechecks_live_file_hash_against_snapshot(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    make_project(root)
+    snapshot = capture_project_snapshot(root)
+    original = (root / "src" / "pkg" / "module.py").read_text(encoding="utf-8")
+    patch = ProjectPatch.from_dict(patch_dict({
+        "path": "src/pkg/module.py",
+        "action": "replace",
+        "expected_sha256": digest(original),
+        "content": "def value(): return 42\n",
+    }))
+    (root / "src" / "pkg" / "module.py").write_text("tampered = True\n", encoding="utf-8")
+
+    with pytest.raises(ProjectContractError, match="changed after snapshot capture"):
+        validate_patch_against_snapshot(snapshot, patch)

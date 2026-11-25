@@ -66,6 +66,13 @@ def validate_patch_against_snapshot(
                 raise ProjectContractError(f"Patch precondition hash mismatch: {change.path}")
             if not source_exists:
                 raise ProjectContractError(f"Patch target disappeared: {change.path}")
+            actual_content = _read_relative_regular_file(
+                snapshot.root, change.path, policy.max_file_bytes
+            )
+            if hashlib.sha256(actual_content).hexdigest() != current.sha256:
+                raise ProjectContractError(
+                    f"Patch target changed after snapshot capture: {change.path}"
+                )
             if change.action == "replace" and change.content is None:
                 raise ProjectContractError("Replace requires new text content")
             if change.action == "delete" and change.content is not None:
