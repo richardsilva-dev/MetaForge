@@ -5,6 +5,9 @@ import statistics
 from typing import Any
 
 
+MINIMUM_PROMOTION_REPEATS = 5
+
+
 def median_absolute_deviation(samples: list[float] | tuple[float, ...]) -> float | None:
     if not samples or any(
         type(value) not in (int, float) or not math.isfinite(value) or value < 0
@@ -54,6 +57,8 @@ def passes_baseline_gate(
             or baseline_median <= 0
             or not isinstance(candidate_samples, list)
             or not isinstance(baseline_samples, list)
+            or len(candidate_samples) < MINIMUM_PROMOTION_REPEATS
+            or len(baseline_samples) < MINIMUM_PROMOTION_REPEATS
             or candidate_mad is None
             or baseline_mad is None
         ):
