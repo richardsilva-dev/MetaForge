@@ -30,6 +30,7 @@ MetaForge has two separate evaluation paths.
 
 - Project changes are staged in a private sibling directory and validated before installation.
 - Final directory installation must be atomic and must never replace a destination created after the initial existence check. Linux uses `renameat2(RENAME_NOREPLACE)`; Windows uses its non-replacing `os.rename` behavior. Unsupported POSIX platforms fail closed rather than falling back to a racy replace operation.
+- If post-install verification fails, MetaForge preserves the published path for inspection instead of recursively deleting it; this avoids deleting a concurrent replacement directory or user data.
 
 ## Explicit limitations
 
