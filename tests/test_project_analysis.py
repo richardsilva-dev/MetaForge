@@ -125,3 +125,23 @@ def test_malformed_dependency_manifest_is_reported_without_aborting(tmp_path):
     (root / "package.json").write_text('{"dependencies":', encoding="utf-8")
     report = analyze_project(capture_project_snapshot(root)).to_dict()
     assert any(item["code"] == "dependency-manifest-parse-error" for item in report["diagnostics"])
+
+
+def test_supported_manifest_formats_are_inventory_only(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    _project(root)
+    (root / "Cargo.toml").write_text('[dependencies]\nserde = "1.0"\n[dev-dependencies]\ninsta = "1"\n', encoding="utf-8")
+    (root / "go.mod").write_text('module example.test/app\n\ngo 1.22\nrequire (\n example.test/lib v1.2.3\n example.test/tool v0.4.0 // indirect\n)\n', encoding="utf-8")
+    (root / "requirements.txt").write_text('httpx>=0.27\npytest==8.0\n', encoding="utf-8")
+    (root / "composer.json").write_text('{"require":{"vendor/package":"^1.0"}}', encoding="utf-8")
+    (root / "pom.xml").write_text('<project><dependencies><dependency><groupId>org.example</groupId><artifactId>core</artifactId><version>2.0</version></dependency></dependencies></project>', encoding="utf-8")
+
+    report = analyze_project(capture_project_snapshot(root)).to_dict()
+    dependencies = report["dependency_manifests"]
+
+    assert any(item["ecosystem"] == "rust" and item["name"] == "serde" for item in dependencies)
+    assert any(item["ecosystem"] == "go" and item["source"] == "indirect" for item in dependencies)
+    assert any(item["ecosystem"] == "python" and item["name"] == "httpx" for item in dependencies)
+    assert any(item["ecosystem"] == "php" and item["name"] == "vendor/package" for item in dependencies)
+    assert any(item["ecosystem"] == "maven" and item["name"] == "org.example:core" for item in dependencies)
