@@ -85,6 +85,7 @@ def compare_project_analyses(
         for item in new.get("declared_entry_points", [])
     }
     entrypoint_regressions: list[dict[str, Any]] = []
+    entrypoint_additions: list[dict[str, Any]] = []
     unresolved_new_entrypoints: list[dict[str, Any]] = []
     for key, previous in old_entries.items():
         current = new_entries.get(key)
@@ -101,9 +102,13 @@ def compare_project_analyses(
                                            "before": previous.get("target"), "after": current.get("target"),
                                            "resolution": current.get("resolution")})
     for key, current in new_entries.items():
-        if key not in old_entries and current.get("ecosystem") == "python" and current.get("resolution") != "resolved":
-            unresolved_new_entrypoints.append({"name": current["name"], "target": current.get("target"),
-                                               "resolution": current.get("resolution")})
+        if key not in old_entries:
+            entrypoint_additions.append({"name": current["name"], "target": current.get("target"),
+                                         "ecosystem": current.get("ecosystem"),
+                                         "resolution": current.get("resolution")})
+            if current.get("ecosystem") == "python" and current.get("resolution") != "resolved":
+                unresolved_new_entrypoints.append({"name": current["name"], "target": current.get("target"),
+                                                   "resolution": current.get("resolution")})
 
     old_cycles = {tuple(sorted(group)) for group in old.get("dependency_graph", {}).get("cycles", [])}
     new_cycles = {tuple(sorted(group)) for group in new.get("dependency_graph", {}).get("cycles", [])}
@@ -161,6 +166,7 @@ def compare_project_analyses(
         "blocking_reasons": blocking_reasons,
         "public_api": {"additions": api_additions, "breaking_changes": api_breaking},
         "entry_points": {
+            "additions": entrypoint_additions,
             "regressions": entrypoint_regressions,
             "new_unresolved": unresolved_new_entrypoints,
         },
