@@ -79,3 +79,12 @@ classes. Dynamic __all__ expressions produce a warning and fall back to visible 
 definitions. This is a static source contract, not a guarantee of runtime exports:
 module-level mutation, decorators, metaprogramming, conditional definitions, and
 dynamic imports can alter the effective API.
+
+
+### Declared application entry points
+
+The analyzer inventories script and binary declarations from supported package manifests.
+Python console scripts, GUI scripts, plugin entry points, and Poetry scripts are checked
+against the statically analyzed module and symbol inventory. Rust Cargo binaries,
+Node package bins, and Composer binaries are recorded but not resolved by language
+parsers yet. No declared command, build script, or application entry point is executed.
