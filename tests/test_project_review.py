@@ -175,3 +175,68 @@ def test_project_review_cli_writes_machine_readable_report(tmp_path, monkeypatch
     report = json.loads(output.read_text(encoding="utf-8"))
     assert report["accepted"] is True
     assert report["execution_scope"]["project_code_executed"] is False
+
+
+def test_project_apply_cli_creates_only_reviewed_candidate_copy(tmp_path, monkeypatch):
+    import json
+    import sys
+    from metaforge.cli import main
+
+    root = tmp_path / "project"
+    root.mkdir()
+    _project(root)
+    snapshot = capture_project_snapshot(root)
+    patch = _patch({
+        "path": "docs/design.md",
+        "action": "replace",
+        "expected_sha256": snapshot.file_map["docs/design.md"].sha256,
+        "content": "# Candidate design\n",
+    })
+    patch_path = tmp_path / "patch.json"
+    patch_path.write_text(json.dumps(patch.to_dict()), encoding="utf-8")
+    destination = tmp_path / "candidate"
+    output = tmp_path / "apply-review.json"
+    monkeypatch.setattr(sys, "argv", [
+        "metaforge", "project", "apply", str(root), str(patch_path),
+        "--destination", str(destination), "--output", str(output),
+    ])
+
+    assert main() == 0
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert report["candidate_copy_created"] is True
+    assert report["candidate_copy_path"] == str(destination)
+    assert (destination / "docs" / "design.md").read_text(encoding="utf-8") == "# Candidate design\n"
+    assert (root / "docs" / "design.md").read_text(encoding="utf-8") == "# Design\n"
+    assert report["execution_scope"]["project_code_executed"] is False
+
+
+def test_project_apply_cli_does_not_create_copy_when_review_rejects(tmp_path, monkeypatch):
+    import json
+    import sys
+    from metaforge.cli import main
+
+    root = tmp_path / "project"
+    root.mkdir()
+    _project(root)
+    snapshot = capture_project_snapshot(root)
+    module = root / "src" / "pkg" / "module.py"
+    patch = _patch({
+        "path": "src/pkg/module.py",
+        "action": "replace",
+        "expected_sha256": _digest(module),
+        "content": "def public(changed: int) -> int:\n    return changed\n",
+    })
+    patch_path = tmp_path / "breaking-patch.json"
+    patch_path.write_text(json.dumps(patch.to_dict()), encoding="utf-8")
+    destination = tmp_path / "rejected-candidate"
+    output = tmp_path / "rejected-review.json"
+    monkeypatch.setattr(sys, "argv", [
+        "metaforge", "project", "apply", str(root), str(patch_path),
+        "--destination", str(destination), "--output", str(output),
+    ])
+
+    assert main() == 1
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert report["accepted"] is False
+    assert report["candidate_copy_created"] is False
+    assert not destination.exists()

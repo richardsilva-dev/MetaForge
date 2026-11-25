@@ -124,6 +124,14 @@ def main() -> int:
     project_review.add_argument("--allow-breaking-changes", action="store_true")
     project_review.add_argument("--allow-new-cycles", action="store_true")
     project_review.add_argument("--allow-unresolved-entrypoints", action="store_true")
+    project_apply = project_sub.add_parser("apply", help="review a patch and create a separate candidate project copy without executing project code")
+    project_apply.add_argument("root", type=Path)
+    project_apply.add_argument("patch", type=Path)
+    project_apply.add_argument("--destination", type=Path, required=True)
+    project_apply.add_argument("--output", type=Path, default=Path(".artifacts/project-apply-review.json"))
+    project_apply.add_argument("--allow-breaking-changes", action="store_true")
+    project_apply.add_argument("--allow-new-cycles", action="store_true")
+    project_apply.add_argument("--allow-unresolved-entrypoints", action="store_true")
 
     replay = sub.add_parser("replay", help="re-run an archived experiment using its stored dataset")
     replay.add_argument("--run", type=Path, required=True, help="path to a prior experiment JSON")
@@ -189,6 +197,59 @@ def main() -> int:
         print(f"Entrypoint regressions: {len(report['entry_points']['regressions'])}")
         print(f"Report: {args.output}")
         return 0 if report["accepted"] else 1
+
+
+
+    if args.command == "project" and args.project_command == "apply":
+        try:
+            import stat
+            from metaforge.projects import (
+                ProjectPatch,
+                apply_patch_to_copy,
+                capture_project_snapshot,
+                review_project_patch,
+            )
+            patch_path = args.patch.expanduser()
+            descriptor = os.open(patch_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            try:
+                patch_stat = os.fstat(descriptor)
+                if not stat.S_ISREG(patch_stat.st_mode) or patch_stat.st_size > 2 * 1024 * 1024:
+                    raise ValueError("Patch input must be a regular file no larger than 2 MiB")
+                with os.fdopen(descriptor, "rb") as stream:
+                    descriptor = -1
+                    patch_bytes = stream.read(2 * 1024 * 1024 + 1)
+            finally:
+                if descriptor >= 0:
+                    os.close(descriptor)
+            if len(patch_bytes) > 2 * 1024 * 1024:
+                raise ValueError("Patch input grew beyond the 2 MiB limit")
+            patch = ProjectPatch.from_dict(json.loads(patch_bytes.decode("utf-8")))
+            snapshot = capture_project_snapshot(args.root)
+            report = review_project_patch(
+                snapshot,
+                patch,
+                allow_breaking_changes=args.allow_breaking_changes,
+                allow_new_cycles=args.allow_new_cycles,
+                allow_unresolved_entrypoints=args.allow_unresolved_entrypoints,
+            )
+            if report["accepted"]:
+                candidate = apply_patch_to_copy(snapshot, patch, args.destination)
+                report["candidate_copy_created"] = True
+                report["candidate_copy_path"] = str(candidate.root)
+                report["candidate_copy_fingerprint"] = candidate.fingerprint
+            else:
+                report["candidate_copy_created"] = False
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        except Exception as exc:
+            parser.error(f"project apply stopped safely: {type(exc).__name__}: {exc}")
+        print(f"Patch accepted: {report['accepted']}")
+        print(f"Candidate copy created: {report['candidate_copy_created']}")
+        if report["candidate_copy_created"]:
+            print(f"Candidate: {report['candidate_copy_path']}")
+            print(f"Fingerprint: {report['candidate_copy_fingerprint']}")
+        print(f"Report: {args.output}")
+        return 0 if report["candidate_copy_created"] else 1
 
 
     if args.command == "run":
