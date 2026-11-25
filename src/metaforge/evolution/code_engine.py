@@ -477,6 +477,9 @@ class CodeEvolutionEngine:
                 "selected_source": "candidate" if best_is_candidate else "trusted_baseline",
                 "improvement_ratio": (baseline_score - best_score) / baseline_score if baseline_score else 0.0,
                 "candidate_promoted": best_is_candidate,
+                "verification_stage": (
+                    "awaiting_independent_replay" if best_is_candidate else "trusted_baseline"
+                ),
             },
             "best_candidate": best_candidate.to_dict() if best_candidate else None,
             "budget": {
