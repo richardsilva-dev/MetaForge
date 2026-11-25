@@ -158,7 +158,7 @@ def _dependency_graph(modules: list[ProjectModule], imports: list[ProjectImport]
             if candidates:
                 target_path = min(candidates, key=lambda pair: (len(pair[0]), pair[0]))[1]
         target = module_for_path.get(target_path) if target_path else None
-        if source and target and source != target:
+        if source and target:
             edges_set.add((source, target))
     edges = sorted(edges_set)
     adjacency = {node: [] for node in nodes}
@@ -168,38 +168,48 @@ def _dependency_graph(modules: list[ProjectModule], imports: list[ProjectImport]
         incoming[target] += 1
     for values in adjacency.values():
         values.sort()
-    index = 0
-    indices: dict[str, int] = {}
-    low: dict[str, int] = {}
-    stack: list[str] = []
-    on_stack: set[str] = set()
+    # Iterative Kosaraju SCC avoids recursion on deep project graphs.
+    visited: set[str] = set()
+    finish_order: list[str] = []
+    for root in nodes:
+        if root in visited:
+            continue
+        visited.add(root)
+        stack: list[tuple[str, bool]] = [(root, False)]
+        while stack:
+            node, expanded = stack.pop()
+            if expanded:
+                finish_order.append(node)
+                continue
+            stack.append((node, True))
+            for neighbor in reversed(adjacency[node]):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    stack.append((neighbor, False))
+    reverse = {node: [] for node in nodes}
+    for source, targets in adjacency.items():
+        for target in targets:
+            reverse[target].append(source)
+    for values in reverse.values():
+        values.sort()
+    assigned: set[str] = set()
     cycles: list[list[str]] = []
-    def visit(node: str) -> None:
-        nonlocal index
-        indices[node] = low[node] = index
-        index += 1
-        stack.append(node)
-        on_stack.add(node)
-        for neighbor in adjacency[node]:
-            if neighbor not in indices:
-                visit(neighbor)
-                low[node] = min(low[node], low[neighbor])
-            elif neighbor in on_stack:
-                low[node] = min(low[node], indices[neighbor])
-        if low[node] == indices[node]:
-            component = []
-            while True:
-                member = stack.pop()
-                on_stack.remove(member)
-                component.append(member)
-                if member == node:
-                    break
-            component.sort()
-            if len(component) > 1 or node in adjacency[node]:
-                cycles.append(component)
-    for node in nodes:
-        if node not in indices:
-            visit(node)
+    for root in reversed(finish_order):
+        if root in assigned:
+            continue
+        component = []
+        stack = [root]
+        assigned.add(root)
+        while stack:
+            node = stack.pop()
+            component.append(node)
+            for neighbor in reverse[node]:
+                if neighbor not in assigned:
+                    assigned.add(neighbor)
+                    stack.append(neighbor)
+        component.sort()
+        if len(component) > 1 or root in adjacency[root]:
+            cycles.append(component)
     cycles.sort(key=lambda group: tuple(group))
     isolated = sorted(node for node in nodes if not adjacency[node] and incoming[node] == 0)
     return {
@@ -237,7 +247,7 @@ def analyze_project(snapshot: ProjectSnapshot) -> ProjectAnalysis:
                 try:
                     tree = ast.parse(raw.decode("utf-8"), filename=path, type_comments=True)
                     if PurePosixPath(path).name == "__main__.py":
-                        entry_points.append({"path": path, "module": _module_name(path), "kind": "python_module"})
+                        entry_points.append({"path": path, "module": (_module_name(path) or "").removesuffix(".__main__"), "kind": "python_module"})
                     if _has_main_guard(tree):
                         entry_points.append({"path": path, "module": _module_name(path), "kind": "main_guard"})
                 except (SyntaxError, RecursionError, UnicodeDecodeError):
