@@ -448,14 +448,15 @@ _MANIFEST_NAMES = {
     "composer.json": "php", "pom.xml": "maven",
 }
 
-def _manifest_dependencies(path: str, raw: bytes) -> tuple[list[ManifestDependency], list[dict[str, Any]]]:
+def _manifest_dependencies(path: str, raw: bytes) -> tuple[list[ManifestDependency], list[dict[str, Any]], list[DeclaredEntryPoint]]:
     """Inventory explicitly allow-listed root manifests without resolving or installing dependencies."""
     name = PurePosixPath(path).name.casefold()
     ecosystem = _MANIFEST_NAMES.get(name)
     if ecosystem is None:
-        return [], []
+        return [], [], []
     found: list[ManifestDependency] = []
     diagnostics: list[dict[str, Any]] = []
+    declared_entries: list[DeclaredEntryPoint] = []
     def add(dep_name: Any, requirement: Any, group: str, source: str = "declared") -> None:
         if not isinstance(dep_name, str) or not isinstance(requirement, (str, int, float)):
             return
@@ -467,11 +468,41 @@ def _manifest_dependencies(path: str, raw: bytes) -> tuple[list[ManifestDependen
         if "://" in safe_requirement or "git+" in safe_requirement.casefold():
             safe_requirement = "[direct-reference-redacted]"
         found.append(ManifestDependency(path, ecosystem, safe_name, safe_requirement, group, source))
+    def add_entry(entry_name: Any, target: Any, kind: str) -> None:
+        if not isinstance(entry_name, str) or not isinstance(target, str):
+            return
+        safe_name = entry_name.strip()
+        safe_target = target.strip()
+        if (not safe_name or len(safe_name) > 256 or not safe_target or len(safe_target) > 512
+                or any(ord(char) < 32 for char in safe_name + safe_target)):
+            return
+        module = symbol = None
+        if ecosystem == "python":
+            normalized = safe_target.split("[", 1)[0].strip()
+            match = re.fullmatch(r"([A-Za-z_]\\w*(?:\\.[A-Za-z_]\\w*)*)(?::([A-Za-z_]\\w*(?:\\.[A-Za-z_]\\w*)*))?", normalized)
+            if match:
+                module, symbol = match.group(1), match.group(2)
+        declared_entries.append(DeclaredEntryPoint(
+            path, ecosystem, safe_name, safe_target, kind, module, symbol,
+            "pending_static_resolution" if ecosystem == "python" else "not_analyzed",
+            None,
+        ))
     try:
         if name == "pyproject.toml":
             data = tomllib.loads(raw.decode("utf-8"))
             project = data.get("project", {})
             if isinstance(project, dict):
+                for section, kind in (("scripts", "console_script"), ("gui-scripts", "gui_script")):
+                    values = project.get(section, {})
+                    if isinstance(values, dict):
+                        for entry_name, target in values.items():
+                            add_entry(entry_name, target, kind)
+                groups = project.get("entry-points", {})
+                if isinstance(groups, dict):
+                    for group, values in groups.items():
+                        if isinstance(values, dict):
+                            for entry_name, target in values.items():
+                                add_entry(entry_name, target, "plugin:" + str(group))
                 for item in project.get("dependencies", []):
                     if isinstance(item, str):
                         match = re.match(r"\s*([A-Za-z0-9_.-]+)", item)
@@ -484,7 +515,15 @@ def _manifest_dependencies(path: str, raw: bytes) -> tuple[list[ManifestDependen
                                 if isinstance(item, str):
                                     match = re.match(r"\s*([A-Za-z0-9_.-]+)", item)
                                     if match: add(match.group(1), item, "optional:" + group)
-            poetry = data.get("tool", {}).get("poetry", {}).get("dependencies", {})
+            poetry_config = data.get("tool", {}).get("poetry", {})
+            if isinstance(poetry_config, dict):
+                poetry_scripts = poetry_config.get("scripts", {})
+                if isinstance(poetry_scripts, dict):
+                    for entry_name, target in poetry_scripts.items():
+                        if isinstance(target, dict):
+                            target = target.get("reference")
+                        add_entry(entry_name, target, "poetry_script")
+            poetry = poetry_config.get("dependencies", {}) if isinstance(poetry_config, dict) else {}
             if isinstance(poetry, dict):
                 for dep_name, requirement in poetry.items():
                     if dep_name.casefold() != "python":
@@ -493,6 +532,19 @@ def _manifest_dependencies(path: str, raw: bytes) -> tuple[list[ManifestDependen
         elif name in {"package.json", "composer.json"}:
             data = json.loads(raw.decode("utf-8"))
             if isinstance(data, dict):
+                if name == "package.json":
+                    bin_value = data.get("bin")
+                    if isinstance(bin_value, str):
+                        add_entry(data.get("name", "package"), bin_value, "node_bin")
+                    elif isinstance(bin_value, dict):
+                        for entry_name, target in bin_value.items():
+                            add_entry(entry_name, target, "node_bin")
+                else:
+                    bin_value = data.get("bin", [])
+                    if isinstance(bin_value, list):
+                        for target in bin_value:
+                            if isinstance(target, str):
+                                add_entry(PurePosixPath(target).stem, target, "composer_bin")
                 keys = (("dependencies", "runtime"), ("devDependencies", "development"),
                         ("peerDependencies", "peer"), ("optionalDependencies", "optional")) if name == "package.json" else (("require", "runtime"), ("require-dev", "development"))
                 for key, group in keys:
@@ -502,6 +554,11 @@ def _manifest_dependencies(path: str, raw: bytes) -> tuple[list[ManifestDependen
                             if name != "composer.json" or dep_name != "php": add(dep_name, requirement, group)
         elif name == "cargo.toml":
             data = tomllib.loads(raw.decode("utf-8"))
+            bins = data.get("bin", [])
+            if isinstance(bins, list):
+                for item in bins:
+                    if isinstance(item, dict):
+                        add_entry(item.get("name"), item.get("path", ""), "cargo_bin")
             for section, group in (("dependencies", "runtime"), ("dev-dependencies", "development"), ("build-dependencies", "build")):
                 values = data.get(section, {})
                 if isinstance(values, dict):
@@ -537,7 +594,7 @@ def _manifest_dependencies(path: str, raw: bytes) -> tuple[list[ManifestDependen
     except (UnicodeDecodeError, ValueError, TypeError, KeyError, AttributeError, RecursionError, ET.ParseError):
         diagnostics.append({"path": path, "code": "dependency-manifest-parse-error", "severity": "warning"})
     found.sort(key=lambda item: (item.group.casefold(), item.name.casefold(), item.requirement))
-    return found, diagnostics
+    return found, diagnostics, declared_entries
 
 
 
