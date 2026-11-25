@@ -66,6 +66,7 @@ class ProjectPolicy:
     max_file_bytes: int = 256 * 1024
     max_patch_bytes: int = 1024 * 1024
     max_snapshot_entries: int = 20_000
+    max_snapshot_depth: int = 64
 
     def __post_init__(self) -> None:
         limits = {
@@ -75,6 +76,7 @@ class ProjectPolicy:
             "max_file_bytes": (self.max_file_bytes, 1_024, 2 * 1024 * 1024),
             "max_patch_bytes": (self.max_patch_bytes, 1_024, 10 * 1024 * 1024),
             "max_snapshot_entries": (self.max_snapshot_entries, 1, 1_000_000),
+            "max_snapshot_depth": (self.max_snapshot_depth, 1, 256),
         }
         for name, (value, minimum, maximum) in limits.items():
             if type(value) is not int or not minimum <= value <= maximum:
