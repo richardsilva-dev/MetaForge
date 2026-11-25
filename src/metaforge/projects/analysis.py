@@ -77,9 +77,9 @@ def _module_name(path: str) -> str | None:
     if parts and parts[-1] == "__init__": parts.pop()
     return ".".join(parts) if parts and all(x.isidentifier() for x in parts) else None
 
-def _relative_target(current: str | None, level: int, target: str | None) -> str:
+def _relative_target(current: str | None, level: int, target: str | None, package_init: bool) -> str:
     parts = current.split(".") if current else []
-    if parts: parts.pop()
+    if parts and not package_init: parts.pop()
     remove = max(level - 1, 0)
     if remove: parts = parts[:-remove] if remove <= len(parts) else []
     if target: parts.extend(target.split("."))
@@ -103,7 +103,7 @@ def _parse_python(path: str, raw: bytes, known: set[str]):
                 imports.append(ProjectImport(path, target, node.lineno, "import",
                     "local" if local else "external_or_unresolved"))
         elif isinstance(node, ast.ImportFrom):
-            target = _relative_target(current, node.level, node.module) if node.level else (node.module or "")
+            target = _relative_target(current, node.level, node.module, PurePosixPath(path).stem == "__init__") if node.level else (node.module or "")
             local = target in known or any(x.startswith(target + ".") for x in known) or (node.level > 0 and bool(target))
             imports.append(ProjectImport(path, target or ".", node.lineno, "from",
                 "local" if local else "external_or_unresolved"))
