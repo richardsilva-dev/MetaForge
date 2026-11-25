@@ -144,7 +144,7 @@ def _dependency_graph(modules: list[ProjectModule], imports: list[ProjectImport]
                       entry_points: list[dict[str, Any]]) -> dict[str, Any]:
     by_name = {m.module_name: m.path for m in modules
                if m.language == "python" and m.module_name}
-    nodes = sorted(by_name.values(), key=str.casefold)
+    nodes = sorted(by_name.keys(), key=str.casefold)
     module_for_path = {path: name for name, path in by_name.items()}
     edges_set: set[tuple[str, str]] = set()
     for item in imports:
