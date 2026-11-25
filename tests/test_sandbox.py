@@ -50,7 +50,7 @@ elif args and args[0] == "run":
         mount_spec = mount_arg.split("=", 1)[1]
         source_path = mount_spec.split("source=", 1)[1].split(",target=", 1)[0]
         payload = json.loads((Path(source_path) / "input.json").read_text(encoding="utf-8"))
-        repeats = int(args[-2])
+        repeats = int(args[-4])
         print(json.dumps({{"output": sorted(payload["values"]), "samples_ns": [1000] * repeats}}))
 else:
     raise SystemExit(2)
@@ -88,6 +88,7 @@ def test_rootless_sandbox_runs_with_required_isolation_flags(tmp_path):
     assert "--mount=type=bind,source=" in args
     assert ",target=/workspace,readonly" in args
     assert "/workspace/runner.py" in args
+    assert "/workspace/candidate_worker.py" in args
 
 
 def test_sandbox_fails_closed_when_runtime_is_not_rootless(tmp_path):
@@ -148,7 +149,7 @@ def test_trusted_sandbox_smoke_uses_probe_mode(tmp_path):
     result = runner.smoke()
     assert result.success is True
     args = Path(str(runtime) + ".args").read_text(encoding="utf-8")
-    assert args.rstrip().endswith("1")
+    assert args.splitlines()[-3] == "1"
     assert len(result.algorithm_samples_seconds) == 2
 
 
@@ -156,12 +157,14 @@ def test_trusted_sandbox_smoke_uses_probe_mode(tmp_path):
 def test_candidate_cannot_spoof_timing_or_wrapper_output_by_monkeypatching(tmp_path):
     import subprocess
 
-    from metaforge.sandbox.runner import _RUNNER_SOURCE
+    from metaforge.sandbox.runner import _RUNNER_SOURCE, _WORKER_SOURCE
 
     runner_path = tmp_path / "runner.py"
+    worker_path = tmp_path / "candidate_worker.py"
     candidate_path = tmp_path / "candidate.py"
     input_path = tmp_path / "input.json"
     runner_path.write_text(_RUNNER_SOURCE, encoding="utf-8")
+    worker_path.write_text(_WORKER_SOURCE, encoding="utf-8")
     candidate_path.write_text(
         "import builtins, json, sys, time\n"
         "time.perf_counter_ns = lambda: 0\n"
@@ -177,7 +180,7 @@ def test_candidate_cannot_spoof_timing_or_wrapper_output_by_monkeypatching(tmp_p
     input_path.write_text(json.dumps({"values": [9, 1, 5, 2]}), encoding="utf-8")
 
     completed = subprocess.run(
-        [sys.executable, "-I", str(runner_path), str(candidate_path), str(input_path), "3", "0"],
+        [sys.executable, "-I", str(runner_path), str(candidate_path), str(input_path), str(worker_path), "3", "0", "5", "1000000"],
         capture_output=True,
         text=True,
         timeout=5,
