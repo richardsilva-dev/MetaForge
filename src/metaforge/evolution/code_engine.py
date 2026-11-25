@@ -248,7 +248,13 @@ class CodeEvolutionEngine:
         if not isinstance(smoke, SandboxResult) or not smoke.success:
             detail = smoke.error if isinstance(smoke, SandboxResult) else "invalid smoke result"
             raise RuntimeError(f"Rootless sandbox smoke failed: {detail or 'policy verification failed'}")
-        if len(smoke.algorithm_samples_seconds) != 2:
+        if (
+            len(smoke.algorithm_samples_seconds) != 2
+            or any(
+                type(value) not in (int, float) or not math.isfinite(value) or value <= 0
+                for value in smoke.algorithm_samples_seconds
+            )
+        ):
             raise RuntimeError("Rootless sandbox smoke returned invalid timing samples")
 
         # Measure the trusted reference under the exact same workload suite and sandbox.
