@@ -658,7 +658,7 @@ class SandboxRunner:
             total_project_bytes = 0
             reserved = {"candidate.py", "input.json", "runner.py", "candidate_worker.py"}
             for relative_path, content in additional_files.items():
-                if (not isinstance(relative_path, str) or not relative_path or not isinstance(content, bytes)
+                if (not isinstance(relative_path, str) or not relative_path or len(relative_path) > 1024 or not isinstance(content, bytes)
                         or "\\" in relative_path or ":" in relative_path
                         or any(ord(char) < 32 for char in relative_path)
                         or any(part in {"", ".", ".."} for part in relative_path.split("/"))):
