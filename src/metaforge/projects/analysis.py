@@ -469,13 +469,15 @@ def _manifest_dependencies(path: str, raw: bytes) -> tuple[list[ManifestDependen
             safe_requirement = "[direct-reference-redacted]"
         found.append(ManifestDependency(path, ecosystem, safe_name, safe_requirement, group, source))
     def add_entry(entry_name: Any, target: Any, kind: str) -> None:
-        if not isinstance(entry_name, str) or not isinstance(target, str):
+        if not isinstance(entry_name, str) or not isinstance(target, str) or not isinstance(kind, str):
             return
         safe_name = entry_name.strip()
         safe_target = target.strip()
         if (not safe_name or len(safe_name) > 256 or not safe_target or len(safe_target) > 512
-                or any(ord(char) < 32 for char in safe_name + safe_target)):
+                or len(kind) > 128 or any(ord(char) < 32 for char in safe_name + safe_target + kind)):
             return
+        if "://" in safe_target or "git+" in safe_target.casefold():
+            safe_target = "[target-redacted]"
         module = symbol = None
         if ecosystem == "python":
             normalized = safe_target.split("[", 1)[0].strip()
