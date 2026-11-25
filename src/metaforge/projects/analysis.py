@@ -128,7 +128,7 @@ class ProjectAnalysis:
     declared_entry_points: tuple[DeclaredEntryPoint, ...]
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": "1.3", "snapshot_fingerprint": self.snapshot_fingerprint,
+            "schema_version": "1.4", "snapshot_fingerprint": self.snapshot_fingerprint,
             "files_analyzed": self.files_analyzed, "language_counts": dict(self.language_counts),
             "modules": [x.to_dict() for x in self.modules],
             "imports": [x.to_dict() for x in self.imports],
@@ -144,7 +144,8 @@ class ProjectAnalysis:
                 "manifest_inventory": "explicit root allow-list; declarations only; no resolution, installation, or execution",
                 "external_dependency_matching": "Python top-level import names compared to normalized declared distribution names; exact-name heuristic only",
                 "public_api_contracts": "literal __all__ when available; otherwise inferred public definitions; dynamic exports are warnings",
-                "declared_entry_points": "manifest declarations; Python module and symbol resolution is static only"},
+                "declared_entry_points": "manifest declarations; Python module and symbol resolution is static only",
+                "dynamic_imports": "literal module-name expressions only; non-literal or unsupported targets produce diagnostics"},
         }
 
 def _module_name(path: str) -> str | None:
