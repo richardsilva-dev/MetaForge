@@ -125,6 +125,7 @@ def test_snapshot_rejects_non_utf8_and_enforces_file_and_byte_budgets(tmp_path):
 
     (root / "src" / "bad.py").write_text("x = 1\n", encoding="utf-8")
     (root / "src" / "second.py").write_text("y = 2\n", encoding="utf-8")
+    (root / "src" / "large.py").write_text("x" * 1_500, encoding="utf-8")
     with pytest.raises(ProjectContractError, match="file-count"):
         capture_project_snapshot(root, ProjectPolicy(max_snapshot_files=1))
     with pytest.raises(ProjectContractError, match="byte limit"):
@@ -231,7 +232,7 @@ def test_patch_rejects_case_collisions_with_existing_source_files(tmp_path):
         "content": "def value(): return 9\\n",
     }))
 
-    with pytest.raises(ProjectContractError, match="already exists"):
+    with pytest.raises(ProjectContractError, match="collides"):
         validate_patch_against_snapshot(snapshot, patch)
 
 
