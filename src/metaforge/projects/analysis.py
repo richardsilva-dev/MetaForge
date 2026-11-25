@@ -185,7 +185,7 @@ def _parse_python(path: str, raw: bytes, known: set[str]):
             bases = "(" + ", ".join(ast.unparse(x) for x in node.bases) + ")" if node.bases else ""
             symbols.append(ProjectSymbol(path, node.name, "class", node.lineno, f"class {node.name}{bases}"))
             for member in node.body:
-                if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)) and not member.name.startswith("_"):
+                if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)) and (not member.name.startswith("_") or member.name in {"__init__", "__call__"}):
                     prefix = "async " if isinstance(member, ast.AsyncFunctionDef) else ""
                     signature = f"{prefix}def {node.name}.{member.name}({ast.unparse(member.args)})"
                     if member.returns: signature += f" -> {ast.unparse(member.returns)}"
