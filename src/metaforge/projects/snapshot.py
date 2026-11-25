@@ -264,7 +264,7 @@ def capture_project_snapshot(
             raise ProjectContractError(f"Cannot inspect project root: {directory_name}") from exc
         if _is_symlink_or_reparse_point(metadata) or not stat.S_ISDIR(metadata.st_mode):
             raise ProjectContractError(f"Allow-listed project root must be a real directory: {directory_name}")
-        if metadata.st_dev != root_device or os.path.ismount(start):
+        if metadata.st_dev != root_device or (os.name != "nt" and os.path.ismount(start)):
             raise ProjectContractError(f"Allow-listed project root crosses a filesystem boundary: {directory_name}")
 
         stack = [(start, 0)]
@@ -295,7 +295,7 @@ def capture_project_snapshot(
                             f"Symlinks and junctions are forbidden inside snapshot roots: {child.name}"
                         )
                     if stat.S_ISDIR(child_metadata.st_mode):
-                        if child_metadata.st_dev != root_device or os.path.ismount(child_path):
+                        if child_metadata.st_dev != root_device or (os.name != "nt" and os.path.ismount(child_path)):
                             raise ProjectContractError(
                                 f"Filesystem mount points are forbidden inside snapshot roots: {child.name}"
                             )
