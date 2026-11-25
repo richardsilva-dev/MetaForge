@@ -187,7 +187,6 @@ def apply_patch_to_copy(
     installed = False
     try:
         for entry in snapshot.files:
-            source = source_root / PurePosixPath(entry.path)
             target = stage / PurePosixPath(entry.path)
             raw = _read_relative_regular_file(source_root, entry.path, policy.max_file_bytes)
             if hashlib.sha256(raw).hexdigest() != entry.sha256:
