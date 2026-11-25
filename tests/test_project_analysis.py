@@ -75,6 +75,9 @@ def test_dependency_graph_detects_cycles_isolated_modules_and_entry_points(tmp_p
     assert {"path": "src/sample/__main__.py", "module": "sample", "kind": "python_module"} in graph["entry_points"]
     assert graph["metrics"]["cycle_count"] == 1
     assert graph["metrics"]["module_count"] == len(graph["nodes"])
+    assert graph["module_metrics"]["sample.service"]["in_degree"] >= 1
+    assert graph["module_metrics"]["sample.service"]["reachable_from_entry_point"] is True
+    assert graph["module_metrics"]["sample.runner"]["is_entry_point"] is True
 
 
 def test_from_package_import_alias_resolves_submodule_edge(tmp_path):

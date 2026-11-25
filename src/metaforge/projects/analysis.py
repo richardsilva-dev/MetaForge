@@ -224,14 +224,40 @@ def _dependency_graph(modules: list[ProjectModule], imports: list[ProjectImport]
             cycles.append(component)
     cycles.sort(key=lambda group: tuple(group))
     isolated = sorted(node for node in nodes if not adjacency[node] and incoming[node] == 0)
+    entry_point_nodes = sorted({
+        module_for_path[item["path"]]
+        for item in entry_points
+        if item.get("path") in module_for_path
+    })
+    reachable: set[str] = set()
+    pending = list(reversed(entry_point_nodes))
+    while pending:
+        node = pending.pop()
+        if node in reachable:
+            continue
+        reachable.add(node)
+        pending.extend(reversed(adjacency[node]))
+    module_metrics = {
+        node: {
+            "in_degree": incoming[node],
+            "out_degree": len(adjacency[node]),
+            "is_entry_point": node in entry_point_nodes,
+            "reachable_from_entry_point": node in reachable,
+        }
+        for node in nodes
+    }
     return {
         "nodes": nodes,
         "edges": [{"source": source, "target": target} for source, target in edges],
         "cycles": cycles,
         "isolated_modules": isolated,
         "entry_points": sorted(entry_points, key=lambda item: (item["path"].casefold(), item["kind"])),
+        "entry_point_nodes": entry_point_nodes,
+        "module_metrics": module_metrics,
         "metrics": {"module_count": len(nodes), "edge_count": len(edges),
-                    "cycle_count": len(cycles), "isolated_module_count": len(isolated)},
+                    "cycle_count": len(cycles), "isolated_module_count": len(isolated),
+                    "entry_point_count": len(entry_point_nodes),
+                    "reachable_module_count": len(reachable)},
         "scope": "Python modules and statically recognized main guards only; no execution",
     }
 
