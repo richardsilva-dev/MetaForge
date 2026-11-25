@@ -45,9 +45,10 @@ _PROTECTED_BASENAMES = frozenset({
     "containerfile", "makefile", ".gitignore",
 })
 _WINDOWS_RESERVED_NAMES = frozenset({
-    "CON", "PRN", "AUX", "NUL",
+    "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$", "CLOCK$",
     *(f"COM{index}" for index in range(1, 10)),
     *(f"LPT{index}" for index in range(1, 10)),
+    "COM¹", "COM²", "COM³", "LPT¹", "LPT²", "LPT³",
 })
 
 
@@ -279,7 +280,7 @@ def _validate_project_path(path: str, action: str) -> str:
         for part in parts
     ):
         raise ProjectContractError("Hidden, generated, and excluded paths are forbidden")
-    if any(part.split(".", 1)[0].upper() in _WINDOWS_RESERVED_NAMES for part in parts):
+    if any(part.split(".", 1)[0].rstrip(" .").upper() in _WINDOWS_RESERVED_NAMES for part in parts):
         raise ProjectContractError("Windows reserved device names are forbidden")
     if parts[0] not in _ALLOWED_DIRECTORY_ROOTS and path not in _ALLOWED_ROOT_FILES:
         raise ProjectContractError("Patch path is outside the allow-listed project roots")
