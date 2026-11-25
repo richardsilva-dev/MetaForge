@@ -426,29 +426,41 @@ class SandboxRunner:
             return
 
         cleanup_deadline = time.monotonic() + 3.0
-        for attempt in range(3):
-            for command in (
-                [runtime, "kill", container_ref],
-                [runtime, "rm", "-f", container_ref],
-            ):
-                remaining = cleanup_deadline - time.monotonic()
-                if remaining <= 0:
+        while True:
+            remaining = cleanup_deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            try:
+                subprocess.run(
+                    [runtime, "kill", container_ref],
+                    capture_output=True,
+                    timeout=min(0.5, remaining),
+                    env=env,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+
+            remaining = cleanup_deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            try:
+                removed = subprocess.run(
+                    [runtime, "rm", "-f", container_ref],
+                    capture_output=True,
+                    timeout=min(0.5, remaining),
+                    env=env,
+                    check=False,
+                )
+                if removed.returncode == 0:
                     return
-                try:
-                    subprocess.run(
-                        command,
-                        capture_output=True,
-                        timeout=min(1.0, remaining),
-                        env=env,
-                        check=False,
-                    )
-                except (OSError, subprocess.TimeoutExpired):
-                    pass
-            if attempt < 2:
-                remaining = cleanup_deadline - time.monotonic()
-                if remaining <= 0:
-                    return
-                time.sleep(min(0.1, remaining))
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+
+            remaining = cleanup_deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            time.sleep(min(0.1, remaining))
 
     def smoke(self, timeout_seconds: float | None = None) -> SandboxResult:
         """Run only the fixed trusted isolation probe; never executes model output."""
