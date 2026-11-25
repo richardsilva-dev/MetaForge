@@ -226,7 +226,7 @@ def analyze_project(snapshot: ProjectSnapshot) -> ProjectAnalysis:
             raise ProjectContractError(f"Project file changed after snapshot capture: {entry.path}")
         files.append((entry.path, language, raw))
     known = {name for path, lang, _ in files if lang == "python" and (name := _module_name(path))}
-    modules, imports, symbols, diagnostics, counts, entry_points = [], [], [], [], [], {}
+    modules, imports, symbols, diagnostics, counts, entry_points = [], [], [], [], {}, []
     for path, language, raw in files:
         counts[language] = counts.get(language, 0) + 1
         module, status = (_module_name(path), "inventory_only") if language == "python" else (None, "inventory_only")
