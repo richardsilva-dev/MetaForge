@@ -37,6 +37,7 @@ def compare_project_analyses(
     old = _report(before)
     new = _report(after)
     api_breaking: list[dict[str, Any]] = []
+    api_additions: list[dict[str, Any]] = []
     old_contracts = {item["path"]: item for item in old.get("module_contracts", [])}
     new_contracts = {item["path"]: item for item in new.get("module_contracts", [])}
 
@@ -44,6 +45,8 @@ def compare_project_analyses(
         previous = old_contracts.get(path)
         current = new_contracts.get(path)
         if previous is None:
+            for name in current.get("exported_names", []) if current else []:
+                api_additions.append({"path": path, "kind": "module_export_added", "name": name})
             continue
         if current is None:
             for name in previous.get("exported_names", []):
@@ -53,12 +56,18 @@ def compare_project_analyses(
                                      "name": symbol["name"], "before": symbol.get("signature")})
             continue
 
+        added_exports = set(current.get("exported_names", [])) - set(previous.get("exported_names", []))
+        for name in sorted(added_exports):
+            api_additions.append({"path": path, "kind": "export_added", "name": name})
         removed_exports = set(previous.get("exported_names", [])) - set(current.get("exported_names", []))
         for name in sorted(removed_exports):
             api_breaking.append({"path": path, "kind": "export_removed", "name": name})
 
         old_symbols = {item["name"]: item.get("signature", "") for item in previous.get("public_symbols", [])}
         new_symbols = {item["name"]: item.get("signature", "") for item in current.get("public_symbols", [])}
+        for name in sorted(set(new_symbols) - set(old_symbols)):
+            api_additions.append({"path": path, "kind": "symbol_added", "name": name,
+                                  "after": new_symbols[name]})
         for name in sorted(set(old_symbols) - set(new_symbols)):
             api_breaking.append({"path": path, "kind": "symbol_removed", "name": name,
                                  "before": old_symbols[name]})
@@ -83,6 +92,10 @@ def compare_project_analyses(
             if previous.get("resolution") == "resolved":
                 entrypoint_regressions.append({"name": previous["name"], "kind": "entrypoint_removed",
                                                "before": previous.get("target")})
+        elif previous.get("target") != current.get("target"):
+            entrypoint_regressions.append({"name": previous["name"], "kind": "entrypoint_target_changed",
+                                           "before": previous.get("target"), "after": current.get("target"),
+                                           "resolution": current.get("resolution")})
         elif previous.get("resolution") == "resolved" and current.get("resolution") != "resolved":
             entrypoint_regressions.append({"name": previous["name"], "kind": "entrypoint_resolution_regressed",
                                            "before": previous.get("target"), "after": current.get("target"),
@@ -111,7 +124,7 @@ def compare_project_analyses(
 
     def dependency_keys(report: dict[str, Any]) -> set[tuple[str, str, str, str]]:
         return {
-            (item.get("ecosystem", ""), item.get("name", ""),
+            (item.get("manifest_path", ""), item.get("ecosystem", ""), item.get("name", ""),
              item.get("requirement", ""), item.get("group", ""))
             for item in report.get("dependency_manifests", [])
         }
@@ -146,7 +159,7 @@ def compare_project_analyses(
             "allow_unresolved_entrypoints": allow_unresolved_entrypoints,
         },
         "blocking_reasons": blocking_reasons,
-        "public_api": {"breaking_changes": api_breaking},
+        "public_api": {"additions": api_additions, "breaking_changes": api_breaking},
         "entry_points": {
             "regressions": entrypoint_regressions,
             "new_unresolved": unresolved_new_entrypoints,
