@@ -1,10 +1,12 @@
 # Architecture Plan: Multi-language Optimization and Project Refactoring
 
-**Status:** design target; not an implemented capability.
+**Status:** target architecture. A first host-side snapshot/PatchSet foundation is implemented in `src/metaforge/projects`; it is not yet connected to agents, project builds/tests, or automatic refactoring.
 
 ## 1. Current boundary
 
-The current source-level evolution engine is a controlled experiment for Python integer sorting. It generates one pure `solve(values)` function, validates it against a fixed contract, reviews it, runs it in a rootless container, and ranks it over a deterministic workload suite. The C and Rust adapters currently execute trusted repository-owned implementations. None of these components currently performs multi-file project refactoring or general generated-native-code execution.
+The current source-level evolution engine is a controlled experiment for Python integer sorting. It generates one pure `solve(values)` function, validates it against a fixed contract, reviews it, runs it in a rootless container, and ranks it over a deterministic workload suite. The C and Rust adapters currently execute trusted repository-owned implementations.
+
+The repository now also contains a host-side `ProjectSnapshot` and `ProjectPatch` contract. It can capture an allow-listed UTF-8 source/documentation manifest and atomically apply hash-preconditioned create/replace/delete operations into a new disposable directory. It never modifies the source checkout and does not execute candidate code. It is not integrated with a model, compiler, project test runner, or full project-refactoring agent.
 
 Do not remove this boundary until the replacement has equivalent or stronger isolation and validation.
 
@@ -65,21 +67,26 @@ The current integer-sort task becomes one implementation of this contract, not a
 
 ### ProjectSnapshot
 
-A project snapshot should be immutable and reproducible:
-- Deterministic file manifest with normalized relative paths, file sizes, and SHA-256 hashes.
-- Explicit include/exclude roots and maximum file/count/byte budgets.
-- Symlinks, path traversal, device files, sockets, and special files rejected.
-- Secrets, credentials, build outputs, virtual environments, caches, and user data excluded by default.
-- Source snapshot and baseline acceptance tests stored separately.
+The current initial implementation provides:
+- Deterministic manifest for allow-listed UTF-8 text files under `src/`, `tests/`, `docs/`, and `backends/`, plus selected root documentation.
+- Per-file size and SHA-256, total-size/count budgets, canonical manifest fingerprint, case-collision checks, Unicode NFC paths, and no-follow file access where the platform provides descriptor-relative APIs.
+- Symlink and special-file rejection in included roots; hidden paths, common environments, caches, build outputs, binary files, and dependency/build manifests are excluded or protected.
+- Default budgets: 1,000 files / 20 MiB snapshot; 30 patch changes / 256 KiB per changed file / 1 MiB total patch content.
+- The current snapshot does **not** scan for hardcoded credentials in included source files. Project files must not be sent to a model until secret scanning/redaction is implemented.
+- Binary assets are not included, so this initial disposable copy is a text-source workspace, not a complete runnable clone of arbitrary projects.
+
+The next step is a richer immutable project snapshot with explicit baseline test identity and secret scanning before any external model context is assembled.
 
 ### PatchSet
 
 Project-level agents must return structured file operations, not unrestricted shell scripts:
-- Each operation names a normalized relative path and operation type.
+- Each operation names a normalized relative path and one of `create`, `replace`, or `delete`.
 - Replacements/deletions carry the expected pre-change SHA-256; creations require the path not to exist.
-- The host verifies all paths, file types, content sizes, duplicate operations, and preconditions before applying anything.
-- Security-sensitive files, CI workflows, dependency lockfiles, build configuration, and acceptance tests are protected by default and require explicit policy exceptions.
-- Patch application occurs only in a disposable workspace copy. Never apply a model proposal directly to the user's checkout.
+- The implemented parser rejects unknown fields, path traversal, absolute/drive/UNC paths, hidden paths, Windows reserved device names, Unicode non-NFC/control paths, case-colliding paths, protected build/dependency manifests, scripts, and unapproved file types.
+- Existing files under `tests/` are immutable; only new test files may be added.
+- Current limits are enforced before file materialization. Source snapshots are revalidated before copy; every copied source file is checked against its captured hash.
+- Patch application uses a temporary sibling directory and atomic rename to a destination that must not already exist. The original checkout is never modified and no candidate code, build or tests are run.
+- This PatchSet foundation is currently host-side only; model generation and isolated project testing remain future milestones.
 
 ### LanguageBackend
 
@@ -154,8 +161,8 @@ Agents may disagree and propose alternatives. No agent can approve its own patch
 
 - **V0.8:** harden AST review and introduce reproducible multi-workload algorithm evaluation. (The two increments are currently in review/merged as noted in the repository changelog.)
 - **V0.9:** extract ProblemSpec and LanguageBackend contracts; add typed experiment plans and backend capability discovery.
-- **V0.10:** add ProjectSnapshot, PatchSet schema, path/hash policy, and safe patch application with adversarial tests.
-- **V0.11:** implement one end-to-end Python project-refactoring backend using immutable tests, no-network sandbox builds, baseline comparisons, and patch replay.
+- **V0.10 foundation (initial implementation):** ProjectSnapshot, PatchSet schema, path/hash policy, and safe patch application into a disposable copy are implemented with adversarial tests. Secret scanning, binary/resource preservation, model integration, and project-test execution remain pending.
+- **V0.11:** implement one end-to-end Python project-refactoring backend using immutable tests, secret scanning, no-network sandbox builds, baseline comparisons, and patch replay.
 - **V0.12:** add Rust/C generated-source backends in pinned compiler images, with offline compilation and differential/fuzz testing.
 - **V1.0:** enable broader multi-language and architecture-level optimization only after the same acceptance and threat-model requirements are met across backends.
 
