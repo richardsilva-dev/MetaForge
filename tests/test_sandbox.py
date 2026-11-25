@@ -34,6 +34,12 @@ elif args[:2] == ["image", "inspect"]:
 elif args and args[0] in ("kill", "rm"):
     with open(__file__ + ".cleanup", "a", encoding="utf-8") as handle:
         handle.write(" ".join(args) + "\\n")
+    if mode == "cleanup_delayed":
+        counter_path = Path(__file__ + ".cleanup-count")
+        count = int(counter_path.read_text(encoding="utf-8")) + 1 if counter_path.exists() else 1
+        counter_path.write_text(str(count), encoding="utf-8")
+        if count < 5:
+            raise SystemExit(1)
     raise SystemExit(0)
 elif args and args[0] == "run":
     cid_arg = next(item for item in args if item.startswith("--cidfile="))
@@ -321,6 +327,57 @@ def test_candidate_stdout_is_bounded_before_supervisor_buffers_it(tmp_path):
 
     completed = subprocess.run(
         [sys.executable, "-I", str(runner_path), str(candidate_path), str(input_path), str(worker_path), "1", "0", "5", "1024"],
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=False,
+    )
+
+    assert completed.returncode != 0
+    assert len(completed.stdout.encode("utf-8")) < 4096
+
+
+
+def test_container_cleanup_retries_until_the_name_becomes_removable(tmp_path):
+    runtime = _fake_runtime(tmp_path, "cleanup_delayed")
+    runner = SandboxRunner(SandboxPolicy(image=IMAGE), str(runtime))
+    missing_cid = tmp_path / "container.id"
+
+    runner._stop_container(
+        str(runtime),
+        missing_cid,
+        runner._runtime_env(),
+        "metaforge-" + "a" * 32,
+    )
+
+    attempts = int(Path(str(runtime) + ".cleanup-count").read_text(encoding="utf-8"))
+    assert attempts >= 5
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="worker supervisor is a Linux process")
+def test_candidate_stderr_is_bounded_before_supervisor_buffers_it(tmp_path):
+    import subprocess
+
+    from metaforge.sandbox.runner import _RUNNER_SOURCE, _WORKER_SOURCE
+
+    runner_path = tmp_path / "runner.py"
+    worker_path = tmp_path / "candidate_worker.py"
+    candidate_path = tmp_path / "candidate.py"
+    input_path = tmp_path / "input.json"
+    runner_path.write_text(_RUNNER_SOURCE, encoding="utf-8")
+    worker_path.write_text(_WORKER_SOURCE, encoding="utf-8")
+    candidate_path.write_text(
+        "import sys\n"
+        "def solve(values):\n"
+        "    sys.stderr.write('x' * 1000000)\n"
+        "    values.sort()\n"
+        "    return values\n",
+        encoding="utf-8",
+    )
+    input_path.write_text(json.dumps({"values": [9, 1, 5, 2]}), encoding="utf-8")
+
+    completed = subprocess.run(
+        [sys.executable, "-I", str(runner_path), str(candidate_path), str(input_path), str(worker_path), "1", "0", "5", "1000000"],
         capture_output=True,
         text=True,
         timeout=5,
