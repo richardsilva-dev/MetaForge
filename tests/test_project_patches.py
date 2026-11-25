@@ -385,3 +385,50 @@ def test_patch_application_refuses_existing_destination_and_overlap(tmp_path):
         apply_patch_to_copy(snapshot, patch, existing)
     with pytest.raises(ProjectContractError, match="overlap"):
         apply_patch_to_copy(snapshot, patch, root / "nested")
+
+
+def test_directory_install_refuses_to_replace_an_existing_empty_destination(tmp_path):
+    import metaforge.projects.patches as patches_module
+
+    stage = tmp_path / "stage"
+    destination = tmp_path / "destination"
+    stage.mkdir()
+    destination.mkdir()
+    (stage / "new.txt").write_text("staged", encoding="utf-8")
+
+    with pytest.raises((OSError, ProjectContractError)):
+        patches_module._rename_directory_no_replace(stage, destination)
+
+    assert stage.is_dir()
+    assert destination.is_dir()
+    assert list(destination.iterdir()) == []
+    assert (stage / "new.txt").read_text(encoding="utf-8") == "staged"
+
+
+def test_patch_install_does_not_overwrite_destination_created_during_staging(tmp_path, monkeypatch):
+    import metaforge.projects.patches as patches_module
+
+    root = tmp_path / "project"
+    root.mkdir()
+    make_project(root)
+    snapshot = capture_project_snapshot(root)
+    patch = ProjectPatch.from_dict(patch_dict({
+        "path": "src/pkg/new.py",
+        "action": "create",
+        "content": "value = 7\n",
+    }))
+    destination = tmp_path / "raced-destination"
+    original_install = patches_module._rename_directory_no_replace
+
+    def create_destination_before_install(source, target):
+        target.mkdir()
+        return original_install(source, target)
+
+    monkeypatch.setattr(patches_module, "_rename_directory_no_replace", create_destination_before_install)
+
+    with pytest.raises((OSError, ProjectContractError)):
+        apply_patch_to_copy(snapshot, patch, destination)
+
+    assert destination.is_dir()
+    assert list(destination.iterdir()) == []
+    assert not list(tmp_path.glob(".raced-destination.metaforge-*"))
