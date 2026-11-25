@@ -1,5 +1,6 @@
 import hashlib
 import json
+from pathlib import Path
 import pytest
 
 from metaforge.projects import (
@@ -432,3 +433,39 @@ def test_patch_install_does_not_overwrite_destination_created_during_staging(tmp
     assert destination.is_dir()
     assert list(destination.iterdir()) == []
     assert not list(tmp_path.glob(".raced-destination.metaforge-*"))
+
+
+def test_failed_final_validation_preserves_replacement_destination(tmp_path, monkeypatch):
+    import shutil
+    import metaforge.projects.patches as patches_module
+
+    root = tmp_path / "project"
+    root.mkdir()
+    make_project(root)
+    snapshot = capture_project_snapshot(root)
+    patch = ProjectPatch.from_dict(patch_dict({
+        "path": "src/pkg/new.py",
+        "action": "create",
+        "content": "value = 9\\n",
+    }))
+    destination = tmp_path / "published-copy"
+    original_capture = patches_module.capture_project_snapshot
+    calls = 0
+
+    def replace_destination_before_final_check(path, policy=None):
+        nonlocal calls
+        calls += 1
+        if calls == 3:
+            shutil.rmtree(path)
+            replacement = Path(path)
+            replacement.mkdir()
+            (replacement / "user-data.txt").write_text("preserve me", encoding="utf-8")
+            raise ProjectContractError("injected final validation failure")
+        return original_capture(path, policy)
+
+    monkeypatch.setattr(patches_module, "capture_project_snapshot", replace_destination_before_final_check)
+
+    with pytest.raises(ProjectContractError, match="injected final validation failure"):
+        apply_patch_to_copy(snapshot, patch, destination)
+
+    assert (destination / "user-data.txt").read_text(encoding="utf-8") == "preserve me"
