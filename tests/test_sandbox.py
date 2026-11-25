@@ -60,7 +60,17 @@ elif args and args[0] == "run":
         source_path = mount_spec.split("source=", 1)[1].split(",target=", 1)[0]
         payload = json.loads((Path(source_path) / "input.json").read_text(encoding="utf-8"))
         repeats = int(args[-4])
-        print(json.dumps({{"output": sorted(payload["values"]), "samples_ns": [1000] * repeats}}))
+        if mode == "project_success":
+            test_file = Path(source_path) / "project" / "tests" / "test_basic.py"
+            if not test_file.is_file():
+                raise SystemExit(6)
+            Path(__file__ + ".project").write_text(test_file.read_text(encoding="utf-8"), encoding="utf-8")
+            result = {{"output": sorted(payload["values"]), "samples_ns": [1000] * repeats,
+                      "test_summary": {{"tests_run": 2, "failures": 0, "errors": 0,
+                                       "skipped": 1, "successful": True}}}}
+        else:
+            result = {{"output": sorted(payload["values"]), "samples_ns": [1000] * repeats}}
+        print(json.dumps(result))
 else:
     raise SystemExit(2)
 """
