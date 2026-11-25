@@ -43,3 +43,6 @@ The \`metaforge project analyze <root>\` command captures the bounded allow-list
 ### Static dependency graph
 
 The static project report also includes a Python dependency graph derived only from import statements resolved to modules present in the captured snapshot. It reports directed edges, strongly connected components (cycles), isolated modules, and graph metrics. Cycle detection is iterative to avoid recursion-depth failure on long dependency chains. Entry points are limited to explicit `__main__.py` modules and syntactic `if __name__ == "__main__"` guards. These are structural indicators, not proof that a package is installable or that an entry point executes successfully. Imports that cannot be resolved within the captured Python module inventory remain external-or-unresolved and are excluded from graph edges. No project code, build backend, plugin, or dependency manifest is executed or loaded.
+
+
+The dependency graph includes per-module in-degree and out-degree, explicit entry-point nodes, and a conservative reachability traversal over resolved local import edges. Reachability means structurally reachable from a detected entry point; it does not establish runtime execution or dynamic-import behavior.
