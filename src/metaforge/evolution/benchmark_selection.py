@@ -41,6 +41,8 @@ def passes_baseline_gate(
         baseline_median = baseline.get("median_algorithm_seconds")
         candidate_samples = candidate.get("algorithm_samples_seconds")
         baseline_samples = baseline.get("algorithm_samples_seconds")
+        candidate_mad = median_absolute_deviation(candidate_samples) if isinstance(candidate_samples, list) else None
+        baseline_mad = median_absolute_deviation(baseline_samples) if isinstance(baseline_samples, list) else None
         if (
             type(candidate_median) not in (int, float)
             or type(baseline_median) not in (int, float)
@@ -50,9 +52,12 @@ def passes_baseline_gate(
             or baseline_median <= 0
             or not isinstance(candidate_samples, list)
             or not isinstance(baseline_samples, list)
-            or median_absolute_deviation(candidate_samples) is None
-            or median_absolute_deviation(baseline_samples) is None
+            or candidate_mad is None
+            or baseline_mad is None
         ):
+            return False
+        # Reject apparent gains that are smaller than the observed robust spread.
+        if candidate_median + candidate_mad > baseline_median - baseline_mad:
             return False
         if candidate_median > baseline_median * (1 + maximum_workload_regression_ratio):
             return False
