@@ -76,6 +76,7 @@ def test_rootless_sandbox_runs_with_required_isolation_flags(tmp_path):
     assert result.success is True
     assert result.output == [1, 2, 3, 5]
     assert len(result.algorithm_samples_seconds) == 2
+    assert result.measurement_scope == "rootless_container_external_candidate_process_wall_time_including_startup"
     args = Path(str(runtime) + ".args").read_text(encoding="utf-8")
     for required in (
         "--network=none", "--read-only", "--cap-drop=ALL",
