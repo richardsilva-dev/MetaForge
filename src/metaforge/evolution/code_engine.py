@@ -94,7 +94,7 @@ class CodeEvolutionEngine:
 
     # Require a meaningful measured gain; correctness alone never promotes a mutation.
     MIN_IMPROVEMENT_RATIO = 0.05
-    BASELINE_SOURCE = "def solve(values):\\n    return sorted(values)\\n"
+    BASELINE_SOURCE = "def solve(values):\n    return sorted(values)\n"
 
     def __init__(
         self,
@@ -265,7 +265,7 @@ class CodeEvolutionEngine:
 
         calls_used = 0
         stop_reason = "generation_limit"
-        seen_fingerprints: set[str] = set()
+        seen_fingerprints: set[str] = {baseline_candidate.fingerprint}
         history: list[dict[str, Any]] = []
         all_valid: list[CodeEvaluation] = []
         parent_pool: list[CodeEvaluation] = []
