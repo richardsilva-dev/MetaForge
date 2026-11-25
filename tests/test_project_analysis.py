@@ -23,6 +23,7 @@ def test_analysis_is_static_deterministic_and_builds_import_graph(tmp_path):
     assert report["analysis_scope"]["executed_project_code"] is False
     assert report["language_counts"] == {"python": 3, "rust": 1}
     assert any(x["target"] == "sample.models" and x["resolution"] == "local" for x in report["imports"])
+    assert any(x["source_path"] == "src/sample/__init__.py" and x["target"] == "sample.service" for x in report["imports"])
     assert any(x["name"] == "calculate" and x["signature"] == "def calculate(value: int) -> int" for x in report["symbols"])
 
 def test_analysis_reports_syntax_errors(tmp_path):
