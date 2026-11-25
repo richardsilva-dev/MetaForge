@@ -161,3 +161,14 @@ def test_dependency_manifests_remain_protected_from_project_patches():
                 "content": "[project]",
             }],
         })
+
+
+def test_deeply_nested_manifest_reports_resource_diagnostic(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    _project(root)
+    (root / "package.json").write_text("[" * 2000 + "0" + "]" * 2000, encoding="utf-8")
+
+    report = analyze_project(capture_project_snapshot(root)).to_dict()
+
+    assert any(item["code"] == "dependency-manifest-parse-error" for item in report["diagnostics"])
