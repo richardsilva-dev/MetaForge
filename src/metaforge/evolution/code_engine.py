@@ -108,7 +108,7 @@ class CodeEvolutionEngine:
         seed: int = 7,
         population_size: int = 2,
         generations: int = 2,
-        repeats: int = 3,
+        repeats: int = 5,
         max_agent_calls: int = 8,
         global_timeout_seconds: float = 180.0,
     ) -> None:
