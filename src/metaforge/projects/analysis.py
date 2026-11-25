@@ -574,7 +574,11 @@ def analyze_project(snapshot: ProjectSnapshot) -> ProjectAnalysis:
         counts[language] = counts.get(language, 0) + 1
         module, status = (_module_name(path), "inventory_only") if language == "python" else (None, "inventory_only")
         if language == "python":
-            imps, syms, status, diags, tree = _parse_python(path, raw, known)
+            try:
+                imps, syms, status, diags, tree = _parse_python(path, raw, known)
+            except RecursionError:
+                imps, syms, status, tree = [], [], "resource_limit", None
+                diags = [{"path": path, "code": "python-ast-render-recursion-limit", "severity": "error"}]
             imports.extend(imps); symbols.extend(syms); diagnostics.extend(diags)
             if status == "parsed":
                 contract, contract_diags = _module_contract(path, tree, syms)
