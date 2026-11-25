@@ -175,17 +175,18 @@ def _dependency_graph(modules: list[ProjectModule], imports: list[ProjectImport]
         if root in visited:
             continue
         visited.add(root)
-        stack: list[tuple[str, bool]] = [(root, False)]
+        stack = [(root, iter(adjacency[root]))]
         while stack:
-            node, expanded = stack.pop()
-            if expanded:
+            node, neighbors = stack[-1]
+            try:
+                neighbor = next(neighbors)
+            except StopIteration:
                 finish_order.append(node)
+                stack.pop()
                 continue
-            stack.append((node, True))
-            for neighbor in reversed(adjacency[node]):
-                if neighbor not in visited:
-                    visited.add(neighbor)
-                    stack.append((neighbor, False))
+            if neighbor not in visited:
+                visited.add(neighbor)
+                stack.append((neighbor, iter(adjacency[neighbor])))
     reverse = {node: [] for node in nodes}
     for source, targets in adjacency.items():
         for target in targets:
