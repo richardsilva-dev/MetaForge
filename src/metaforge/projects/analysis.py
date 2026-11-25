@@ -680,6 +680,7 @@ def analyze_project(snapshot: ProjectSnapshot) -> ProjectAnalysis:
     symbols_by_path: dict[str, set[str]] = {}
     for item in symbols:
         symbols_by_path.setdefault(item.path, set()).add(item.name)
+    reexports_by_path = {item.path: set(item.reexported_names) for item in module_contracts}
     resolved_entries = []
     for item in declared_entry_points:
         resolution = item.resolution
@@ -693,7 +694,7 @@ def analyze_project(snapshot: ProjectSnapshot) -> ProjectAnalysis:
                     resolution = "module_not_found"
                 elif module_status.get(resolved_path) != "parsed":
                     resolution = "module_parse_unavailable"
-                elif item.symbol and item.symbol not in symbols_by_path.get(resolved_path, set()):
+                elif item.symbol and item.symbol not in (symbols_by_path.get(resolved_path, set()) | reexports_by_path.get(resolved_path, set())):
                     resolution = "symbol_not_found"
                 else:
                     resolution = "resolved"
