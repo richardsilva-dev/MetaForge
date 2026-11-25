@@ -22,6 +22,7 @@ from metaforge.projects.secrets import (
 __all__ = [
     "PATCH_SCHEMA_VERSION",
     "DeclaredEntryPoint",
+    "DeclaredEntryPoint",
     "ExternalDependencyUsage",
     "ManifestDependency",
     "ProjectAnalysis",
