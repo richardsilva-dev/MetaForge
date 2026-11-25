@@ -61,11 +61,11 @@ def test_dependency_graph_detects_cycles_isolated_modules_and_entry_points(tmp_p
     root.mkdir()
     _project(root)
     package = root / "src" / "sample"
-    (package / "alpha.py").write_text("from .beta import value\\n", encoding="utf-8")
-    (package / "beta.py").write_text("from .alpha import value\\n", encoding="utf-8")
-    (package / "lonely.py").write_text("VALUE = 1\\n", encoding="utf-8")
-    (package / "runner.py").write_text('if __name__ == "__main__":\\n    pass\\n', encoding="utf-8")
-    (package / "__main__.py").write_text("from .service import calculate\\n", encoding="utf-8")
+    (package / "alpha.py").write_text("from .beta import value\n", encoding="utf-8")
+    (package / "beta.py").write_text("from .alpha import value\n", encoding="utf-8")
+    (package / "lonely.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (package / "runner.py").write_text('if __name__ == "__main__":\n    pass\n', encoding="utf-8")
+    (package / "__main__.py").write_text("from .service import calculate\n", encoding="utf-8")
 
     graph = analyze_project(capture_project_snapshot(root)).to_dict()["dependency_graph"]
 
