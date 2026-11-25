@@ -148,7 +148,14 @@ def apply_patch_to_copy(
     if not isinstance(patch, ProjectPatch):
         raise ProjectContractError("A ProjectPatch is required")
 
-    source_root = Path(snapshot.root).resolve(strict=True)
+    supplied_source_root = Path(snapshot.root)
+    try:
+        source_metadata = supplied_source_root.lstat()
+    except OSError as exc:
+        raise ProjectContractError("Snapshot source root is unavailable") from exc
+    if not supplied_source_root.is_dir() or supplied_source_root.is_symlink():
+        raise ProjectContractError("Snapshot source root must remain a real directory")
+    source_root = supplied_source_root.resolve(strict=True)
     current_snapshot = capture_project_snapshot(source_root, policy)
     if current_snapshot.fingerprint != snapshot.fingerprint:
         raise ProjectContractError("Source project changed after snapshot capture")
