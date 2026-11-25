@@ -1,4 +1,5 @@
 import hashlib
+import os
 import json
 from pathlib import Path
 import pytest
@@ -422,6 +423,7 @@ def test_snapshot_enforces_maximum_directory_depth(tmp_path):
     assert "src/one/two/module.py" in {item.path for item in snapshot.files}
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows junctions are checked via reparse-point metadata")
 def test_snapshot_rejects_detected_mount_points_inside_roots(tmp_path, monkeypatch):
     import metaforge.projects.snapshot as snapshot_module
 
