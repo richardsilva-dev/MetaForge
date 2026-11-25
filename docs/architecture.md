@@ -98,3 +98,23 @@ literal relative imports with a literal package argument. It adds these edges to
 static import graph. Non-literal, malformed, oversized, and unsupported targets produce
 diagnostics rather than being evaluated. This does not resolve runtime-generated
 module names or emulate Python import hooks.
+
+
+## Contract-aware multi-file patch review
+
+The project review workflow validates a structured multi-file patch against a captured
+snapshot, applies it only to a disposable copy, and compares before/after static
+architecture reports. By default it blocks removed or changed public API contracts,
+regressed or unresolved Python entry points, and newly introduced dependency cycles.
+It reports module additions/removals, dependency declaration changes, newly unresolved
+imports, and newly isolated modules as review evidence. Explicit flags can permit
+breaking API changes, new cycles, or unresolved entry points; these exceptions are
+recorded in the report. Review does not execute project code, tests, build systems, or
+package managers, and the candidate copy is discarded after the report is produced.
+
+The CLI command is:
+
+    python -m metaforge.cli project review <project-root> <patch.json>
+
+The review report is a static regression gate, not a substitute for independent tests,
+security scanning, runtime validation, or performance measurement.
