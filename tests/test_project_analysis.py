@@ -82,7 +82,7 @@ def test_from_package_import_alias_resolves_submodule_edge(tmp_path):
     root.mkdir()
     _project(root)
     importer = root / "src" / "sample" / "consumer.py"
-    importer.write_text("from . import service\\n", encoding="utf-8")
+    importer.write_text("from . import service\n", encoding="utf-8")
 
     report = analyze_project(capture_project_snapshot(root)).to_dict()
     item = next(x for x in report["imports"] if x["source_path"] == "src/sample/consumer.py")
