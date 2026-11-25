@@ -106,6 +106,8 @@ class ProjectSnapshot:
         paths = [item.path.casefold() for item in self.files]
         if paths != sorted(paths) or len(paths) != len(set(paths)):
             raise ProjectContractError("Snapshot manifest must be sorted and path-unique")
+        for item in self.files:
+            _validate_project_path(item.path, "create")
         if type(self.total_bytes) is not int or self.total_bytes != sum(
             item.size_bytes for item in self.files
         ):
@@ -202,6 +204,8 @@ class ProjectPatch:
         policy: ProjectPolicy | None = None,
     ) -> "ProjectPatch":
         policy = policy or ProjectPolicy()
+        if not isinstance(policy, ProjectPolicy):
+            raise ProjectContractError("A ProjectPolicy is required")
         if not isinstance(value, dict) or set(value) != {"schema_version", "rationale", "changes"}:
             raise ProjectContractError("Patch must contain exactly schema_version, rationale, and changes")
         if value.get("schema_version") != PATCH_SCHEMA_VERSION:
