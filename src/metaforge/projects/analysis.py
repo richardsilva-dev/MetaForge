@@ -122,7 +122,8 @@ class ProjectAnalysis:
             "analysis_scope": {"static_only": True, "executed_project_code": False,
                 "python_ast": True, "other_languages": "file inventory only; dedicated parsers are future work",
                 "manifest_inventory": "explicit root allow-list; declarations only; no resolution, installation, or execution",
-                "external_dependency_matching": "Python top-level import names compared to normalized declared distribution names; exact-name heuristic only"},
+                "external_dependency_matching": "Python top-level import names compared to normalized declared distribution names; exact-name heuristic only",
+                "public_api_contracts": "literal __all__ when available; otherwise inferred public definitions; dynamic exports are warnings"},
         }
 
 def _module_name(path: str) -> str | None:
@@ -185,7 +186,7 @@ def _parse_python(path: str, raw: bytes, known: set[str]):
             bases = "(" + ", ".join(ast.unparse(x) for x in node.bases) + ")" if node.bases else ""
             symbols.append(ProjectSymbol(path, node.name, "class", node.lineno, f"class {node.name}{bases}"))
             for member in node.body:
-                if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)) and (not member.name.startswith("_") or member.name in {"__init__", "__call__"}):
+                if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)) and (not member.name.startswith("_") or (member.name.startswith("__") and member.name.endswith("__"))):
                     prefix = "async " if isinstance(member, ast.AsyncFunctionDef) else ""
                     signature = f"{prefix}def {node.name}.{member.name}({ast.unparse(member.args)})"
                     if member.returns: signature += f" -> {ast.unparse(member.returns)}"
