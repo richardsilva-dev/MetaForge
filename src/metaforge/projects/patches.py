@@ -16,6 +16,7 @@ from metaforge.projects.models import (
 )
 from metaforge.projects.snapshot import (
     _read_regular_file,
+    _is_symlink_or_reparse_point,
     _read_relative_regular_file,
     capture_project_snapshot,
 )
@@ -158,9 +159,11 @@ def apply_patch_to_copy(
         source_metadata = supplied_source_root.lstat()
     except OSError as exc:
         raise ProjectContractError("Snapshot source root is unavailable") from exc
-    if stat.S_ISLNK(source_metadata.st_mode) or not stat.S_ISDIR(source_metadata.st_mode):
+    if _is_symlink_or_reparse_point(source_metadata) or not stat.S_ISDIR(source_metadata.st_mode):
         raise ProjectContractError("Snapshot source root must remain a real directory")
     source_root = supplied_source_root.resolve(strict=True)
+    if source_root != supplied_source_root:
+        raise ProjectContractError("Snapshot source root now contains a symlinked or junction parent")
     current_snapshot = capture_project_snapshot(source_root, policy)
     if current_snapshot.fingerprint != snapshot.fingerprint:
         raise ProjectContractError("Source project changed after snapshot capture")
