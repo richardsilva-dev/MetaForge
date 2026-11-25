@@ -94,3 +94,34 @@ def test_from_package_import_alias_resolves_submodule_edge(tmp_path):
     assert item["kind"] == "from_alias"
     assert item["resolution"] == "local"
     assert {"source": "sample.consumer", "target": "sample.service"} in report["dependency_graph"]["edges"]
+
+
+def test_analysis_inventories_root_dependency_manifests_without_execution(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    _project(root)
+    (root / "pyproject.toml").write_text(
+        '[project]\nname = "sample"\ndependencies = ["requests>=2.31", "pydantic>=2"]\n'
+        '[project.optional-dependencies]\ndev = ["pytest>=8"]\n',
+        encoding="utf-8",
+    )
+    (root / "package.json").write_text(
+        '{"dependencies":{"left-pad":"^1.3.0"},"devDependencies":{"vitest":"^2.0.0"}}',
+        encoding="utf-8",
+    )
+    snapshot = capture_project_snapshot(root)
+    report = analyze_project(snapshot).to_dict()
+    dependencies = report["dependency_manifests"]
+    assert {item["name"] for item in dependencies} == {"requests", "pydantic", "pytest", "left-pad", "vitest"}
+    assert any(item["name"] == "requests" and item["group"] == "runtime" for item in dependencies)
+    assert any(item["name"] == "pytest" and item["group"] == "optional:dev" for item in dependencies)
+    assert report["analysis_scope"]["executed_project_code"] is False
+
+
+def test_malformed_dependency_manifest_is_reported_without_aborting(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    _project(root)
+    (root / "package.json").write_text('{"dependencies":', encoding="utf-8")
+    report = analyze_project(capture_project_snapshot(root)).to_dict()
+    assert any(item["code"] == "dependency-manifest-parse-error" for item in report["diagnostics"])
