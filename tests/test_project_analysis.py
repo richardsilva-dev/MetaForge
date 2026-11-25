@@ -203,7 +203,7 @@ def test_external_imports_are_compared_to_declared_python_dependencies(tmp_path)
     assert usage["PIL"]["status"] == "no_exact_name_match"
     assert usage["PIL"]["confidence"] == "unresolved_mapping"
     assert ("json", "stdlib") in imports
-    assert report["schema_version"] == "1.2"
+    assert report["schema_version"] == "1.3"
 
 
 def test_static_module_contract_uses_literal_all_and_public_signatures(tmp_path):
@@ -236,7 +236,7 @@ def test_static_module_contract_uses_literal_all_and_public_signatures(tmp_path)
     assert {"PublicAPI", "PublicAPI.__init__", "PublicAPI.execute", "run"} <= symbol_names
     assert "PublicAPI._internal" not in symbol_names
     assert "_private" not in symbol_names
-    assert report["schema_version"] == "1.2"
+    assert report["schema_version"] == "1.3"
 
 
 def test_dynamic_all_uses_conservative_fallback_and_diagnostic(tmp_path):
