@@ -200,7 +200,7 @@ def test_external_imports_are_compared_to_declared_python_dependencies(tmp_path)
     assert usage["PIL"]["status"] == "no_exact_name_match"
     assert usage["PIL"]["confidence"] == "unresolved_mapping"
     assert ("json", "stdlib") in imports
-    assert report["schema_version"] == "1.1"
+    assert report["schema_version"] == "1.2"
 
 
 def test_static_module_contract_uses_literal_all_and_public_signatures(tmp_path):
