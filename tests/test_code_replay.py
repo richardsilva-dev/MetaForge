@@ -87,6 +87,7 @@ def test_legacy_code_replay_remains_backward_compatible():
     assert result["replay_of"] == "original-run"
     assert result["best_candidate"] is not None
     assert result["best_candidate"]["correctness_passed"] is True
+    assert result["selection"]["verification_stage"] == "trusted_baseline_retained"
     assert len(result["best_candidate"]["algorithm_samples_seconds"]) == 2
     assert len(sandbox.calls) == 2  # smoke plus one deduplicated baseline/candidate source
     assert sandbox.calls[0][3] is True
