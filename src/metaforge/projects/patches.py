@@ -14,7 +14,11 @@ from metaforge.projects.models import (
     ProjectSnapshot,
     _validate_project_path,
 )
-from metaforge.projects.snapshot import (\n    _read_regular_file,\n    _read_relative_regular_file,\n    capture_project_snapshot,\n)
+from metaforge.projects.snapshot import (
+    _read_regular_file,
+    _read_relative_regular_file,
+    capture_project_snapshot,
+)
 
 
 def validate_patch_against_snapshot(
