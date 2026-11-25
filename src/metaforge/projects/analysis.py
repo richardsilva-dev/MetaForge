@@ -438,7 +438,7 @@ def _dependency_graph(modules: list[ProjectModule], imports: list[ProjectImport]
                     "cycle_count": len(cycles), "isolated_module_count": len(isolated),
                     "entry_point_count": len(entry_point_nodes),
                     "reachable_module_count": len(reachable)},
-        "scope": "Python modules and statically recognized main guards only; no execution",
+        "scope": "Python modules, static main guards, and resolvable manifest-declared entry points; no execution",
     }
 
 
