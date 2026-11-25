@@ -18,8 +18,10 @@ from metaforge.sandbox.policy import SandboxPolicy
 _RUNNER_SOURCE = r"""
 import json, os, resource, runpy, socket, sys, time
 
+_trusted_system_exit = SystemExit
+
 def fail(code):
-    raise SystemExit(code)
+    raise _trusted_system_exit(code)
 
 def verify_sandbox():
     if os.geteuid() == 0:
@@ -98,6 +100,9 @@ _trusted_isinstance = isinstance
 _trusted_type = type
 _trusted_any = any
 _trusted_max = max
+_trusted_callable = callable
+_trusted_list_type = list
+_trusted_int_type = int
 _trusted_range = range
 _trusted_int = int
 
@@ -108,7 +113,7 @@ repeat_count = _trusted_int(sys.argv[3])
 expected = _trusted_sorted(values)
 namespace = runpy.run_path(sys.argv[1], run_name="metaforge_candidate")
 solve = namespace.get("solve")
-if not callable(solve):
+if not _trusted_callable(solve):
     fail(30)
 samples_ns = []
 result = None
@@ -117,8 +122,8 @@ for _ in _trusted_range(repeat_count):
     started = _trusted_clock()
     result = solve(sample)
     elapsed = _trusted_clock() - started
-    if not _trusted_isinstance(result, list) or _trusted_any(
-        _trusted_type(value) is not int for value in result
+    if _trusted_type(result) is not _trusted_list_type or _trusted_any(
+        _trusted_type(value) is not _trusted_int_type for value in result
     ):
         fail(31)
     if result != expected:
