@@ -446,7 +446,7 @@ def test_failed_final_validation_preserves_replacement_destination(tmp_path, mon
     patch = ProjectPatch.from_dict(patch_dict({
         "path": "src/pkg/new.py",
         "action": "create",
-        "content": "value = 9\\n",
+        "content": "value = 9\n",
     }))
     destination = tmp_path / "published-copy"
     original_capture = patches_module.capture_project_snapshot
