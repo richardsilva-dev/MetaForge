@@ -163,15 +163,15 @@ def test_candidate_cannot_spoof_timing_or_wrapper_output_by_monkeypatching(tmp_p
     input_path = tmp_path / "input.json"
     runner_path.write_text(_RUNNER_SOURCE, encoding="utf-8")
     candidate_path.write_text(
-        "import builtins, json, sys, time\\n"
-        "time.perf_counter_ns = lambda: 0\\n"
-        "json.dumps = lambda *args, **kwargs: '{}'\\n"
-        "sys.stdout.write = lambda value: 0\\n"
-        "builtins.sorted = lambda values: []\\n"
-        "builtins.range = lambda *args: []\\n"
-        "def solve(values):\\n"
-        "    values.sort()\\n"
-        "    return values\\n",
+        "import builtins, json, sys, time\n"
+        "time.perf_counter_ns = lambda: 0\n"
+        "json.dumps = lambda *args, **kwargs: '{}'\n"
+        "sys.stdout.write = lambda value: 0\n"
+        "builtins.sorted = lambda values: []\n"
+        "builtins.range = lambda *args: []\n"
+        "def solve(values):\n"
+        "    values.sort()\n"
+        "    return values\n",
         encoding="utf-8",
     )
     input_path.write_text(json.dumps({"values": [9, 1, 5, 2]}), encoding="utf-8")
