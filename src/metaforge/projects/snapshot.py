@@ -20,6 +20,92 @@ from metaforge.projects.models import (
 
 
 
+
+def _read_relative_regular_file(
+    root: Path,
+    relative_path: str,
+    max_bytes: int | None = None,
+) -> bytes:
+    """Open each path component relative to a root descriptor without following symlinks."""
+    parts = relative_path.split("/")
+    if not parts or any(part in {"", ".", ".."} or "\\\\" in part or ":" in part for part in parts):
+        raise ProjectContractError("Snapshot path is not a safe relative path")
+
+    # POSIX dir_fd traversal prevents an attacker from swapping an intermediate
+    # directory for a symlink between lstat and open. Windows does not expose
+    # the same dir_fd API, so it uses the per-component lstat fallback below.
+    if os.open in os.supports_dir_fd and hasattr(os, "O_NOFOLLOW") and hasattr(os, "O_DIRECTORY"):
+        directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+        file_flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+        descriptors: list[int] = []
+        try:
+            root_descriptor = os.open(root, directory_flags)
+            descriptors.append(root_descriptor)
+            current_descriptor = root_descriptor
+            for component in parts[:-1]:
+                next_descriptor = os.open(
+                    component, directory_flags, dir_fd=current_descriptor
+                )
+                descriptors.append(next_descriptor)
+                current_descriptor = next_descriptor
+            file_descriptor = os.open(
+                parts[-1], file_flags | getattr(os, "O_BINARY", 0),
+                dir_fd=current_descriptor,
+            )
+            descriptors.append(file_descriptor)
+            return _read_open_descriptor(file_descriptor, relative_path, max_bytes)
+        except OSError as exc:
+            raise ProjectContractError(
+                f"Cannot safely open project path without following symlinks: {relative_path}"
+            ) from exc
+        finally:
+            for descriptor in reversed(descriptors):
+                os.close(descriptor)
+
+    current = root
+    for component in parts[:-1]:
+        current = current / component
+        try:
+            metadata = current.lstat()
+        except OSError as exc:
+            raise ProjectContractError(f"Cannot inspect project path: {relative_path}") from exc
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+            raise ProjectContractError(f"Project path has a symlink or non-directory parent: {relative_path}")
+    return _read_regular_file(current / parts[-1], max_bytes)
+
+
+def _read_open_descriptor(
+    descriptor: int,
+    display_path: str,
+    max_bytes: int | None = None,
+) -> bytes:
+    opened = os.fstat(descriptor)
+    if not stat.S_ISREG(opened.st_mode):
+        raise ProjectContractError(f"Project entries must be regular files: {display_path}")
+    if max_bytes is not None and opened.st_size > max_bytes:
+        raise ProjectContractError(f"Project file exceeds configured size limit: {display_path}")
+
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = os.read(descriptor, 64 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if max_bytes is not None and total > max_bytes:
+            raise ProjectContractError(f"Project file exceeds configured size limit: {display_path}")
+        chunks.append(chunk)
+    after = os.fstat(descriptor)
+    if (
+        after.st_dev != opened.st_dev
+        or after.st_ino != opened.st_ino
+        or after.st_size != opened.st_size
+        or after.st_mtime_ns != opened.st_mtime_ns
+        or total != opened.st_size
+    ):
+        raise ProjectContractError(f"Project file changed while being read: {display_path}")
+    return b"".join(chunks)
+
 def _read_regular_file(path: Path, max_bytes: int | None = None) -> bytes:
     """Read a regular file without following a final-component symlink."""
     try:
@@ -106,7 +192,7 @@ def capture_project_snapshot(
 
     def add_file(path: Path, relative: str) -> None:
         nonlocal total_bytes
-        raw = _read_regular_file(path, policy.max_file_bytes)
+        raw = _read_relative_regular_file(project_root, relative, policy.max_file_bytes)
         try:
             raw.decode("utf-8")
         except UnicodeDecodeError as exc:
