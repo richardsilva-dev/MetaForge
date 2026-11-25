@@ -212,6 +212,7 @@ def capture_project_snapshot(
 
     entries: list[SnapshotFile] = []
     total_bytes = 0
+    visited_entries = 0
 
     def add_file(relative: str) -> None:
         nonlocal total_bytes
@@ -252,7 +253,16 @@ def capture_project_snapshot(
         while stack:
             current = stack.pop()
             try:
-                children = sorted(os.scandir(current), key=lambda item: item.name.casefold())
+                children = []
+                with os.scandir(current) as iterator:
+                    for child in iterator:
+                        visited_entries += 1
+                        if visited_entries > policy.max_snapshot_entries:
+                            raise ProjectContractError("Project snapshot directory-entry limit exceeded")
+                        children.append(child)
+                children.sort(key=lambda item: item.name.casefold())
+            except ProjectContractError:
+                raise
             except OSError as exc:
                 raise ProjectContractError(f"Cannot enumerate project directory: {current.name}") from exc
             subdirectories: list[Path] = []
