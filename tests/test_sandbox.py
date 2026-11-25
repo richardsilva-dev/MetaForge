@@ -32,15 +32,18 @@ elif args and args[0] == "info":
 elif args[:2] == ["image", "inspect"]:
     raise SystemExit(0)
 elif args and args[0] in ("kill", "rm"):
+    with open(__file__ + ".cleanup", "a", encoding="utf-8") as handle:
+        handle.write(" ".join(args) + "\\n")
     raise SystemExit(0)
 elif args and args[0] == "run":
     cid_arg = next(item for item in args if item.startswith("--cidfile="))
     cid_path = Path(cid_arg.split("=", 1)[1])
     if cid_path.exists():
         raise SystemExit(4)
-    cid_path.write_text("a" * 64, encoding="utf-8")
+    if mode != "timeout_before_cid":
+        cid_path.write_text("a" * 64, encoding="utf-8")
     Path(__file__ + ".args").write_text("\\n".join(args), encoding="utf-8")
-    if mode == "timeout":
+    if mode in ("timeout", "timeout_before_cid"):
         time.sleep(5)
     elif mode == "overflow":
         sys.stdout.write("x" * 4096)
@@ -50,7 +53,7 @@ elif args and args[0] == "run":
         mount_spec = mount_arg.split("=", 1)[1]
         source_path = mount_spec.split("source=", 1)[1].split(",target=", 1)[0]
         payload = json.loads((Path(source_path) / "input.json").read_text(encoding="utf-8"))
-        repeats = int(args[-2])
+        repeats = int(args[-4])
         print(json.dumps({{"output": sorted(payload["values"]), "samples_ns": [1000] * repeats}}))
 else:
     raise SystemExit(2)
@@ -76,6 +79,7 @@ def test_rootless_sandbox_runs_with_required_isolation_flags(tmp_path):
     assert result.success is True
     assert result.output == [1, 2, 3, 5]
     assert len(result.algorithm_samples_seconds) == 2
+    assert result.measurement_scope == "rootless_container_external_candidate_process_wall_time_including_startup"
     args = Path(str(runtime) + ".args").read_text(encoding="utf-8")
     for required in (
         "--network=none", "--read-only", "--cap-drop=ALL",
@@ -88,6 +92,8 @@ def test_rootless_sandbox_runs_with_required_isolation_flags(tmp_path):
     assert "--mount=type=bind,source=" in args
     assert ",target=/workspace,readonly" in args
     assert "/workspace/runner.py" in args
+    assert "/workspace/candidate_worker.py" in args
+    assert "--name=metaforge-" in args
 
 
 def test_sandbox_fails_closed_when_runtime_is_not_rootless(tmp_path):
@@ -148,7 +154,7 @@ def test_trusted_sandbox_smoke_uses_probe_mode(tmp_path):
     result = runner.smoke()
     assert result.success is True
     args = Path(str(runtime) + ".args").read_text(encoding="utf-8")
-    assert args.rstrip().endswith("1")
+    assert args.splitlines()[-3] == "1"
     assert len(result.algorithm_samples_seconds) == 2
 
 
@@ -156,12 +162,14 @@ def test_trusted_sandbox_smoke_uses_probe_mode(tmp_path):
 def test_candidate_cannot_spoof_timing_or_wrapper_output_by_monkeypatching(tmp_path):
     import subprocess
 
-    from metaforge.sandbox.runner import _RUNNER_SOURCE
+    from metaforge.sandbox.runner import _RUNNER_SOURCE, _WORKER_SOURCE
 
     runner_path = tmp_path / "runner.py"
+    worker_path = tmp_path / "candidate_worker.py"
     candidate_path = tmp_path / "candidate.py"
     input_path = tmp_path / "input.json"
     runner_path.write_text(_RUNNER_SOURCE, encoding="utf-8")
+    worker_path.write_text(_WORKER_SOURCE, encoding="utf-8")
     candidate_path.write_text(
         "import builtins, json, sys, time\n"
         "time.perf_counter_ns = lambda: 0\n"
@@ -177,7 +185,7 @@ def test_candidate_cannot_spoof_timing_or_wrapper_output_by_monkeypatching(tmp_p
     input_path.write_text(json.dumps({"values": [9, 1, 5, 2]}), encoding="utf-8")
 
     completed = subprocess.run(
-        [sys.executable, "-I", str(runner_path), str(candidate_path), str(input_path), "3", "0"],
+        [sys.executable, "-I", str(runner_path), str(candidate_path), str(input_path), str(worker_path), "3", "0", "5", "1000000"],
         capture_output=True,
         text=True,
         timeout=5,
@@ -189,3 +197,101 @@ def test_candidate_cannot_spoof_timing_or_wrapper_output_by_monkeypatching(tmp_p
     assert payload["output"] == [1, 2, 5, 9]
     assert len(payload["samples_ns"]) == 3
     assert all(type(sample) is int and sample > 0 for sample in payload["samples_ns"])
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="supervisor dumpability is a Linux control")
+def test_candidate_worker_cannot_write_to_supervisor_stdout_via_procfs(tmp_path):
+    import subprocess
+
+    from metaforge.sandbox.runner import _RUNNER_SOURCE, _WORKER_SOURCE
+
+    runner_path = tmp_path / "runner.py"
+    worker_path = tmp_path / "candidate_worker.py"
+    candidate_path = tmp_path / "candidate.py"
+    input_path = tmp_path / "input.json"
+    runner_path.write_text(_RUNNER_SOURCE, encoding="utf-8")
+    worker_path.write_text(_WORKER_SOURCE, encoding="utf-8")
+    candidate_path.write_text(
+        "import os\n"
+        "def solve(values):\n"
+        "    try:\n"
+        "        with open(f'/proc/{os.getppid()}/fd/1', 'w') as stream:\n"
+        "            stream.write('FORGED-SUPERVISOR-OUTPUT')\n"
+        "    except OSError:\n"
+        "        pass\n"
+        "    values.sort()\n"
+        "    return values\n",
+        encoding="utf-8",
+    )
+    input_path.write_text(json.dumps({"values": [9, 1, 5, 2]}), encoding="utf-8")
+
+    completed = subprocess.run(
+        [sys.executable, "-I", str(runner_path), str(candidate_path), str(input_path), str(worker_path), "2", "0", "5", "1000000"],
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "FORGED-SUPERVISOR-OUTPUT" not in completed.stdout
+    payload = json.loads(completed.stdout)
+    assert payload["output"] == [1, 2, 5, 9]
+    assert len(payload["samples_ns"]) == 2
+
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="worker seccomp is a Linux control")
+def test_candidate_cannot_signal_or_ptrace_the_trusted_supervisor(tmp_path):
+    import subprocess
+
+    from metaforge.sandbox.runner import _RUNNER_SOURCE, _WORKER_SOURCE
+
+    runner_path = tmp_path / "runner.py"
+    worker_path = tmp_path / "candidate_worker.py"
+    candidate_path = tmp_path / "candidate.py"
+    input_path = tmp_path / "input.json"
+    runner_path.write_text(_RUNNER_SOURCE, encoding="utf-8")
+    worker_path.write_text(_WORKER_SOURCE, encoding="utf-8")
+    candidate_path.write_text(
+        "import os, signal\\n"
+        "def solve(values):\\n"
+        "    try:\\n"
+        "        os.kill(os.getppid(), signal.SIGKILL)\\n"
+        "    except PermissionError:\\n"
+        "        pass\\n"
+        "    else:\\n"
+        "        return []\\n"
+        "    values.sort()\\n"
+        "    return values\\n",
+        encoding="utf-8",
+    )
+    input_path.write_text(json.dumps({"values": [9, 1, 5, 2]}), encoding="utf-8")
+
+    completed = subprocess.run(
+        [sys.executable, "-I", str(runner_path), str(candidate_path), str(input_path), str(worker_path), "2", "0", "5", "1000000"],
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    assert payload["output"] == [1, 2, 5, 9]
+    assert len(payload["samples_ns"]) == 2
+
+
+def test_sandbox_timeout_cleans_container_even_before_cidfile_is_written(tmp_path):
+    runtime = _fake_runtime(tmp_path, "timeout_before_cid")
+    runner = SandboxRunner(
+        SandboxPolicy(image=IMAGE, timeout_seconds=0.2), str(runtime)
+    )
+
+    result = runner.run_python("def solve(values): return sorted(values)", [2, 1])
+
+    assert result.success is False
+    assert result.error == "Sandbox execution timed out"
+    cleanup = Path(str(runtime) + ".cleanup").read_text(encoding="utf-8")
+    assert "kill metaforge-" in cleanup
+    assert "rm -f metaforge-" in cleanup
