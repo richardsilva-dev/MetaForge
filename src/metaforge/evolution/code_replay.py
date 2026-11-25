@@ -276,7 +276,11 @@ class CodeReplayEngine:
                 break
 
         baseline = next(
-            (item for item in results if item["candidate"].get("generation") == -1 and item["correctness_passed"]),
+            (
+                item for item in results
+                if item["candidate"].get("fingerprint") == baseline_fingerprint
+                and item["correctness_passed"]
+            ),
             None,
         )
         if baseline is None:
@@ -285,7 +289,7 @@ class CodeReplayEngine:
         promoted = [
             item for item in results
             if item["correctness_passed"]
-            and item["candidate"].get("generation") != -1
+            and item["candidate"].get("fingerprint") != baseline_fingerprint
             and item["median_algorithm_seconds"] <= baseline_score * 0.95
             and passes_baseline_gate(
                 item["workload_results"],
