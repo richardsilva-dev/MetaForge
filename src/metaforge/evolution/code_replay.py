@@ -140,7 +140,7 @@ class CodeReplayEngine:
 
         # Replay measures the same trusted reference so historical candidate
         # rankings use the same promotion rule as a fresh evolution run.
-        baseline_source = "def solve(values):\\n    return sorted(values)\\n"
+        baseline_source = "def solve(values):\n    return sorted(values)\n"
         baseline_fingerprint = hashlib.sha256(baseline_source.encode("utf-8")).hexdigest()
         scheduled[baseline_fingerprint] = {
             "source_code": baseline_source,
