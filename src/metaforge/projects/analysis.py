@@ -240,7 +240,10 @@ def _parse_python(path: str, raw: bytes, known: set[str]):
         )
         if not is_dynamic_import:
             continue
-        target = _literal_string(node.args[0]) if node.args else None
+        target_node = node.args[0] if node.args else next(
+            (keyword.value for keyword in node.keywords if keyword.arg == "name"), None
+        )
+        target = _literal_string(target_node) if target_node is not None else None
         if (target is None or len(target) > 512
                 or re.fullmatch(r"\.*[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", target) is None):
             diagnostics.append({"path": path, "code": "python-dynamic-import-unresolved",
