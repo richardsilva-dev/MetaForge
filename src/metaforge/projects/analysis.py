@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 import re
+import sys
 import tomllib
 import xml.etree.ElementTree as ET
 from pathlib import PurePosixPath
@@ -68,6 +69,18 @@ class ManifestDependency:
                 "group": self.group, "source": self.source}
 
 @dataclass(frozen=True, slots=True)
+class ExternalDependencyUsage:
+    import_name: str
+    occurrences: tuple[dict[str, Any], ...]
+    status: str
+    matched_declaration: str | None
+    confidence: str
+    def to_dict(self) -> dict[str, Any]:
+        return {"import_name": self.import_name, "occurrences": [dict(item) for item in self.occurrences],
+                "status": self.status, "matched_declaration": self.matched_declaration,
+                "confidence": self.confidence}
+
+@dataclass(frozen=True, slots=True)
 class ProjectAnalysis:
     snapshot_fingerprint: str
     files_analyzed: int
@@ -78,9 +91,10 @@ class ProjectAnalysis:
     diagnostics: tuple[dict[str, Any], ...]
     dependency_graph: dict[str, Any]
     dependency_manifests: tuple[ManifestDependency, ...]
+    external_dependency_usage: tuple[ExternalDependencyUsage, ...]
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": "1.0", "snapshot_fingerprint": self.snapshot_fingerprint,
+            "schema_version": "1.1", "snapshot_fingerprint": self.snapshot_fingerprint,
             "files_analyzed": self.files_analyzed, "language_counts": dict(self.language_counts),
             "modules": [x.to_dict() for x in self.modules],
             "imports": [x.to_dict() for x in self.imports],
@@ -88,9 +102,11 @@ class ProjectAnalysis:
             "diagnostics": [dict(x) for x in self.diagnostics],
             "dependency_graph": self.dependency_graph,
             "dependency_manifests": [item.to_dict() for item in self.dependency_manifests],
+            "external_dependency_usage": [item.to_dict() for item in self.external_dependency_usage],
             "analysis_scope": {"static_only": True, "executed_project_code": False,
                 "python_ast": True, "other_languages": "file inventory only; dedicated parsers are future work",
-                "manifest_inventory": "explicit root allow-list; declarations only; no resolution, installation, or execution"},
+                "manifest_inventory": "explicit root allow-list; declarations only; no resolution, installation, or execution",
+                "external_dependency_matching": "Python top-level import names compared to normalized declared distribution names; exact-name heuristic only"},
         }
 
 def _module_name(path: str) -> str | None:
@@ -125,8 +141,9 @@ def _parse_python(path: str, raw: bytes, known: set[str]):
             for alias in node.names:
                 target = alias.name
                 local = target in known or any(x.startswith(target + ".") for x in known)
-                imports.append(ProjectImport(path, target, node.lineno, "import",
-                    "local" if local else "external_or_unresolved"))
+                root_name = target.split(".", 1)[0]
+                resolution = "local" if local else ("stdlib" if root_name in sys.stdlib_module_names else "external_or_unresolved")
+                imports.append(ProjectImport(path, target, node.lineno, "import", resolution))
         elif isinstance(node, ast.ImportFrom):
             target = _relative_target(current, node.level, node.module, PurePosixPath(path).stem == "__init__") if node.level else (node.module or "")
             def is_known(name: str) -> bool:
@@ -141,8 +158,12 @@ def _parse_python(path: str, raw: bytes, known: set[str]):
                     imports.append(ProjectImport(path, alias_target, node.lineno, "from_alias", "local"))
             else:
                 local = bool(target) and is_known(target)
-                imports.append(ProjectImport(path, target or ".", node.lineno, "from",
-                    "local" if local else "external_or_unresolved"))
+                if node.level:
+                    resolution = "local" if local else "relative_unresolved"
+                else:
+                    root_name = (target or "").split(".", 1)[0]
+                    resolution = "local" if local else ("stdlib" if root_name in sys.stdlib_module_names else "external_or_unresolved")
+                imports.append(ProjectImport(path, target or ".", node.lineno, "from", resolution))
     for node in tree.body:
         if isinstance(node, ast.ClassDef) and not node.name.startswith("_"):
             bases = "(" + ", ".join(ast.unparse(x) for x in node.bases) + ")" if node.bases else ""
@@ -380,6 +401,37 @@ def _manifest_dependencies(path: str, raw: bytes) -> tuple[list[ManifestDependen
     return found, diagnostics
 
 
+
+def _external_dependency_usage(imports: list[ProjectImport],
+                              manifests: list[ManifestDependency]) -> tuple[ExternalDependencyUsage, ...]:
+    """Compare Python import roots with declared Python distributions by exact normalized name only."""
+    declared: dict[str, str] = {}
+    for item in manifests:
+        if item.ecosystem != "python":
+            continue
+        normalized = re.sub(r"[-_.]+", "-", item.name).casefold()
+        declared.setdefault(normalized, item.name)
+    occurrences: dict[str, list[dict[str, Any]]] = {}
+    for item in imports:
+        if item.resolution != "external_or_unresolved":
+            continue
+        root_name = item.target.split(".", 1)[0]
+        if not root_name:
+            continue
+        occurrences.setdefault(root_name, []).append({"source_path": item.source_path, "line": item.line})
+    result = []
+    for import_name, sites in sorted(occurrences.items(), key=lambda pair: pair[0].casefold()):
+        matched = declared.get(re.sub(r"[-_.]+", "-", import_name).casefold())
+        result.append(ExternalDependencyUsage(
+            import_name=import_name,
+            occurrences=tuple(sorted(sites, key=lambda item: (item["source_path"].casefold(), item["line"]))),
+            status="exact_name_match" if matched else "no_exact_name_match",
+            matched_declaration=matched,
+            confidence="exact_name_heuristic" if matched else "unresolved_mapping",
+        ))
+    return tuple(result)
+
+
 def analyze_project(snapshot: ProjectSnapshot) -> ProjectAnalysis:
     """Build a deterministic static inventory; never import or execute project source."""
     if not isinstance(snapshot, ProjectSnapshot): raise ProjectContractError("A ProjectSnapshot is required")
@@ -420,6 +472,8 @@ def analyze_project(snapshot: ProjectSnapshot) -> ProjectAnalysis:
     symbols.sort(key=lambda x: (x.path.casefold(), x.line, x.name))
     diagnostics.sort(key=lambda x: (str(x.get("path", "")).casefold(), int(x.get("line", 0))))
     graph = _dependency_graph(modules, imports, entry_points)
+    ordered_manifests = tuple(sorted(manifest_dependencies, key=lambda item: (item.ecosystem, item.manifest_path, item.group, item.name.casefold(), item.requirement)))
+    external_usage = _external_dependency_usage(imports, manifest_dependencies)
     return ProjectAnalysis(snapshot.fingerprint, len(modules), tuple(sorted(counts.items())),
         tuple(modules), tuple(imports), tuple(symbols), tuple(diagnostics), graph,
-        tuple(sorted(manifest_dependencies, key=lambda item: (item.ecosystem, item.manifest_path, item.group, item.name.casefold(), item.requirement))))
+        ordered_manifests, external_usage)
