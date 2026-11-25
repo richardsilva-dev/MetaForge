@@ -107,7 +107,7 @@ def test_one_incorrect_workload_rejects_candidate_and_stops_its_measurement():
             output = [999] if source_code != CodeEvolutionEngine.BASELINE_SOURCE and not smoke_probe and values != sorted(values) else sorted(values)
             return SandboxResult(True, output, 0.01, "fake_internal", None, samples)
 
-    designer = FakeDesigner([SOURCE_A])
+    designer = FakeDesigner([SOURCE_B])
     sandbox = IncorrectWorkloadRunner()
     engine = CodeEvolutionEngine(
         designer, sandbox, population_size=1, generations=1, repeats=2,
@@ -115,7 +115,8 @@ def test_one_incorrect_workload_rejects_candidate_and_stops_its_measurement():
     )
     result = engine.run([3, 1, 2])
 
-    assert result["best_candidate"] is None
+    assert result["best_candidate"]["candidate"]["generation"] == -1
+    assert result["selection"]["selected_source"] == "trusted_baseline"
     assert result["generations"][0]["valid_count"] == 0
     assert result["generations"][0]["evaluations"][0]["correctness_passed"] is False
     assert "Workload 'input' failed" in result["generations"][0]["evaluations"][0]["error"]
