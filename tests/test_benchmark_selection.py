@@ -1,5 +1,3 @@
-import pytest
-
 from metaforge.evolution.benchmark_selection import (
     median_absolute_deviation,
     passes_baseline_gate,
