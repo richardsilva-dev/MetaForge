@@ -75,3 +75,19 @@ def test_dependency_graph_detects_cycles_isolated_modules_and_entry_points(tmp_p
     assert {"path": "src/sample/__main__.py", "module": "sample", "kind": "python_module"} in graph["entry_points"]
     assert graph["metrics"]["cycle_count"] == 1
     assert graph["metrics"]["module_count"] == len(graph["nodes"])
+
+
+def test_from_package_import_alias_resolves_submodule_edge(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    _project(root)
+    importer = root / "src" / "sample" / "consumer.py"
+    importer.write_text("from . import service\n", encoding="utf-8")
+
+    report = analyze_project(capture_project_snapshot(root)).to_dict()
+    item = next(x for x in report["imports"] if x["source_path"] == "src/sample/consumer.py")
+
+    assert item["target"] == "sample.service"
+    assert item["kind"] == "from_alias"
+    assert item["resolution"] == "local"
+    assert {"source": "sample.consumer", "target": "sample.service"} in report["dependency_graph"]["edges"]
