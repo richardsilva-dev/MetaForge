@@ -15,11 +15,13 @@ _ALLOWED_DIRECTORY_ROOTS = frozenset({"src", "tests", "docs", "backends"})
 _ALLOWED_ROOT_FILES = frozenset({"README.md", "CHANGELOG.md", "SECURITY.md", "LICENSE"})
 _ALLOWED_TEXT_SUFFIXES = frozenset({
     ".py", ".pyi", ".rs", ".c", ".h", ".cc", ".cpp", ".hpp",
-    ".md", ".rst", ".txt", ".toml", ".json", ".yaml", ".yml",
+    ".cs", ".fs", ".fsx", ".vb", ".swift", ".scala", ".sc",
     ".js", ".jsx", ".ts", ".tsx", ".go", ".java", ".kt", ".kts",
-    ".xml", ".html", ".htm", ".css", ".scss", ".sql", ".sh",
-    ".ps1", ".bat", ".cmd", ".ini", ".cfg", ".properties",
-    ".proto", ".gradle", ".mk",
+    ".rb", ".php", ".lua", ".dart", ".ex", ".exs", ".erl", ".hrl",
+    ".hs", ".lhs", ".ml", ".mli", ".m", ".mm", ".r", ".jl", ".pl", ".pm",
+    ".md", ".rst", ".txt", ".toml", ".json", ".yaml", ".yml",
+    ".xml", ".html", ".htm", ".css", ".scss", ".sql", ".ini", ".cfg",
+    ".properties", ".proto", ".gradle.kts",
 })
 _IGNORED_DIRECTORY_NAMES = frozenset({
     ".git", ".venv", "venv", "env", "node_modules", "__pycache__",
@@ -31,6 +33,14 @@ _PROTECTED_BASENAMES = frozenset({
     "pyproject.toml", "setup.py", "setup.cfg", "tox.ini", "noxfile.py",
     "cargo.toml", "cargo.lock", "package.json", "package-lock.json",
     "pnpm-lock.yaml", "yarn.lock", "poetry.lock", "uv.lock",
+    "requirements.txt", "requirements.in", "pipfile", "pipfile.lock",
+    "go.mod", "go.sum", "composer.json", "composer.lock",
+    "gemfile", "gemfile.lock", "mix.exs", "mix.lock", "pom.xml",
+    "build.gradle", "settings.gradle", "build.gradle.kts", "settings.gradle.kts",
+    "cmakelists.txt", "meson.build", "cmakepresets.json",
+    "justfile", "taskfile.yml", "deno.json", "deno.jsonc",
+    "bun.lock", "bun.lockb", "pnpm-workspace.yaml", "gradlew", "mvnw",
+    "package.swift", "package.resolved", "build.zig", "build.zig.zon",
     "requirements.txt", "pipfile", "pipfile.lock", "dockerfile",
     "containerfile", "makefile", ".gitignore",
 })
@@ -275,8 +285,12 @@ def _validate_project_path(path: str, action: str) -> str:
         raise ProjectContractError("Patch path is outside the allow-listed project roots")
     if parts[-1].casefold() in _PROTECTED_BASENAMES:
         raise ProjectContractError("Dependency, build, and execution configuration files are protected")
-    if path.casefold().endswith((".lock", ".pem", ".key", ".p12", ".pfx")):
-        raise ProjectContractError("Lockfiles and secret/key files are protected")
+    if path.casefold().endswith((
+        ".lock", ".pem", ".key", ".p12", ".pfx", ".sh", ".ps1",
+        ".bat", ".cmd", ".cmake", ".csproj", ".sln", ".props",
+        ".targets", ".vbproj", ".fsproj",
+    )):
+        raise ProjectContractError("Lockfiles, secret files, scripts, and build manifests are protected")
     if path not in _ALLOWED_ROOT_FILES and PurePosixPath(path).suffix.casefold() not in _ALLOWED_TEXT_SUFFIXES:
         raise ProjectContractError("Only allow-listed text source/documentation file types may be patched")
     if parts[0] == "tests" and action != "create":
