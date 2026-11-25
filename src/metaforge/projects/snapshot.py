@@ -4,7 +4,6 @@ import hashlib
 import os
 from pathlib import Path
 import stat
-from typing import Any
 
 from metaforge.projects.models import (
     ProjectContractError,
@@ -13,7 +12,9 @@ from metaforge.projects.models import (
     SnapshotFile,
     _ALLOWED_DIRECTORY_ROOTS,
     _ALLOWED_ROOT_FILES,
+    _ALLOWED_TEXT_SUFFIXES,
     _PROTECTED_BASENAMES,
+    _IGNORED_DIRECTORY_NAMES,
 )
 
 
@@ -91,7 +92,7 @@ def _is_text_candidate(relative_path: str) -> bool:
         return True
     if path.name.casefold() in _PROTECTED_BASENAMES:
         return False
-    return path.suffix.casefold() in _TEXT_SUFFIXES
+    return path.suffix.casefold() in _ALLOWED_TEXT_SUFFIXES
 
 
 def capture_project_snapshot(
@@ -161,7 +162,7 @@ def capture_project_snapshot(
                 raise ProjectContractError(f"Cannot enumerate project directory: {current.name}") from exc
             subdirectories: list[Path] = []
             for child in children:
-                if child.name in _IGNORED_DIRECTORIES or child.name.startswith("."):
+                if child.name.casefold() in _IGNORED_DIRECTORY_NAMES or child.name.startswith("."):
                     continue
                 child_path = Path(child.path)
                 try:
