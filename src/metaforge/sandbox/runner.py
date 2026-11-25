@@ -394,7 +394,7 @@ class SandboxPreparation:
 @dataclass(frozen=True, slots=True)
 class ProjectTestExecutionResult:
     supported: bool
-    executed: bool
+    executed: bool | None
     success: bool
     tests_run: int
     failures: int
@@ -414,6 +414,7 @@ class SandboxResult:
     error: str | None = None
     algorithm_samples_seconds: tuple[float, ...] = ()
     test_summary: dict[str, int | bool] | None = None
+    execution_started: bool = False
 
 
 class SandboxRunner:
@@ -609,7 +610,7 @@ class SandboxRunner:
         )
         if not sandbox_result.success or sandbox_result.test_summary is None:
             return ProjectTestExecutionResult(
-                True, False, False, 0, 0, 0, 0, sandbox_result.wall_seconds, scope,
+                True, (True if sandbox_result.test_summary is not None else (None if sandbox_result.execution_started else False)), False, 0, 0, 0, 0, sandbox_result.wall_seconds, scope,
                 "Sandboxed unittest execution failed or returned an invalid summary",
             )
         summary = sandbox_result.test_summary
@@ -795,23 +796,23 @@ class SandboxRunner:
             elapsed = time.perf_counter() - started
             cid_directory.cleanup()
             if timed_out:
-                return SandboxResult(False, None, elapsed, scope, "Sandbox execution timed out")
+                return SandboxResult(False, None, elapsed, scope, "Sandbox execution timed out", execution_started=True)
             if overflow.is_set():
-                return SandboxResult(False, None, elapsed, scope, "Sandbox output limit exceeded")
+                return SandboxResult(False, None, elapsed, scope, "Sandbox output limit exceeded", execution_started=True)
             if process.returncode != 0:
                 detail = stderr.decode("utf-8", errors="replace").strip()[:2000]
                 error = f"Sandbox process returned non-zero status ({process.returncode})"
                 if detail:
                     error += f": {detail}"
-                return SandboxResult(False, None, elapsed, scope, error)
+                return SandboxResult(False, None, elapsed, scope, error, execution_started=True)
             try:
                 parsed = json.loads(stdout.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError):
-                return SandboxResult(False, None, elapsed, scope, "Sandbox returned invalid JSON")
+                return SandboxResult(False, None, elapsed, scope, "Sandbox returned invalid JSON", execution_started=True)
             if not isinstance(parsed, dict) or set(parsed) not in (
                 {"output", "samples_ns"}, {"output", "samples_ns", "test_summary"}
             ):
-                return SandboxResult(False, None, elapsed, scope, "Sandbox output schema is invalid")
+                return SandboxResult(False, None, elapsed, scope, "Sandbox output schema is invalid", execution_started=True)
             output = parsed["output"]
             samples_ns = parsed["samples_ns"]
             test_summary = parsed.get("test_summary")
@@ -821,14 +822,14 @@ class SandboxRunner:
                         or any(type(test_summary[key]) is not int or test_summary[key] < 0
                                for key in ("tests_run", "failures", "errors", "skipped"))
                         or type(test_summary["successful"]) is not bool):
-                    return SandboxResult(False, None, elapsed, scope, "Sandbox test summary is invalid")
+                    return SandboxResult(False, None, elapsed, scope, "Sandbox test summary is invalid", execution_started=True)
             if not isinstance(output, list) or any(type(value) is not int for value in output):
-                return SandboxResult(False, None, elapsed, scope, "Sandbox output values are invalid")
+                return SandboxResult(False, None, elapsed, scope, "Sandbox output values are invalid", execution_started=True)
             if not isinstance(samples_ns, list) or len(samples_ns) != repeats or any(
                 type(value) is not int or value < 0 for value in samples_ns
             ):
-                return SandboxResult(False, None, elapsed, scope, "Sandbox timing samples are invalid")
+                return SandboxResult(False, None, elapsed, scope, "Sandbox timing samples are invalid", execution_started=True)
             if output != sorted(values):
-                return SandboxResult(False, None, elapsed, scope, "Independent correctness check failed")
+                return SandboxResult(False, None, elapsed, scope, "Independent correctness check failed", execution_started=True)
             samples = tuple(value / 1_000_000_000 for value in samples_ns)
-            return SandboxResult(True, output, elapsed, scope, None, samples, test_summary)
+            return SandboxResult(True, output, elapsed, scope, None, samples, test_summary, True)
