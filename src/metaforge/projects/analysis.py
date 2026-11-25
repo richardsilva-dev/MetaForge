@@ -81,6 +81,21 @@ class ExternalDependencyUsage:
                 "confidence": self.confidence}
 
 @dataclass(frozen=True, slots=True)
+class ProjectModuleContract:
+    path: str
+    module_name: str | None
+    declared_all: bool
+    exported_names: tuple[str, ...]
+    reexported_names: tuple[str, ...]
+    public_symbols: tuple[ProjectSymbol, ...]
+    confidence: str
+    def to_dict(self) -> dict[str, Any]:
+        return {"path": self.path, "module_name": self.module_name,
+                "declared_all": self.declared_all, "exported_names": list(self.exported_names),
+                "reexported_names": list(self.reexported_names), "public_symbols": [item.to_dict() for item in self.public_symbols],
+                "confidence": self.confidence}
+
+@dataclass(frozen=True, slots=True)
 class ProjectAnalysis:
     snapshot_fingerprint: str
     files_analyzed: int
@@ -92,9 +107,10 @@ class ProjectAnalysis:
     dependency_graph: dict[str, Any]
     dependency_manifests: tuple[ManifestDependency, ...]
     external_dependency_usage: tuple[ExternalDependencyUsage, ...]
+    module_contracts: tuple[ProjectModuleContract, ...]
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": "1.1", "snapshot_fingerprint": self.snapshot_fingerprint,
+            "schema_version": "1.2", "snapshot_fingerprint": self.snapshot_fingerprint,
             "files_analyzed": self.files_analyzed, "language_counts": dict(self.language_counts),
             "modules": [x.to_dict() for x in self.modules],
             "imports": [x.to_dict() for x in self.imports],
@@ -103,10 +119,12 @@ class ProjectAnalysis:
             "dependency_graph": self.dependency_graph,
             "dependency_manifests": [item.to_dict() for item in self.dependency_manifests],
             "external_dependency_usage": [item.to_dict() for item in self.external_dependency_usage],
+            "module_contracts": [item.to_dict() for item in self.module_contracts],
             "analysis_scope": {"static_only": True, "executed_project_code": False,
                 "python_ast": True, "other_languages": "file inventory only; dedicated parsers are future work",
                 "manifest_inventory": "explicit root allow-list; declarations only; no resolution, installation, or execution",
-                "external_dependency_matching": "Python top-level import names compared to normalized declared distribution names; exact-name heuristic only"},
+                "external_dependency_matching": "Python top-level import names compared to normalized declared distribution names; exact-name heuristic only",
+                "public_api_contracts": "literal __all__ when available; otherwise inferred public definitions; dynamic exports are warnings"},
         }
 
 def _module_name(path: str) -> str | None:
@@ -128,13 +146,13 @@ def _parse_python(path: str, raw: bytes, known: set[str]):
     try:
         tree = ast.parse(raw.decode("utf-8"), filename=path, type_comments=True)
     except UnicodeDecodeError:
-        return imports, symbols, "invalid_utf8", [{"path": path, "code": "python-invalid-utf8", "severity": "error"}]
+        return imports, symbols, "invalid_utf8", [{"path": path, "code": "python-invalid-utf8", "severity": "error"}], None
     except SyntaxError as exc:
         return imports, symbols, "syntax_error", [{"path": path, "code": "python-syntax-error",
-            "severity": "warning", "line": exc.lineno or 1}]
+            "severity": "warning", "line": exc.lineno or 1}], None
     except RecursionError:
         return imports, symbols, "resource_limit", [{"path": path, "code": "python-ast-recursion-limit",
-            "severity": "error"}]
+            "severity": "error"}], None
     current = _module_name(path)
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -168,12 +186,113 @@ def _parse_python(path: str, raw: bytes, known: set[str]):
         if isinstance(node, ast.ClassDef) and not node.name.startswith("_"):
             bases = "(" + ", ".join(ast.unparse(x) for x in node.bases) + ")" if node.bases else ""
             symbols.append(ProjectSymbol(path, node.name, "class", node.lineno, f"class {node.name}{bases}"))
+            for member in node.body:
+                if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)) and (not member.name.startswith("_") or (member.name.startswith("__") and member.name.endswith("__"))):
+                    prefix = "async " if isinstance(member, ast.AsyncFunctionDef) else ""
+                    signature = f"{prefix}def {node.name}.{member.name}({ast.unparse(member.args)})"
+                    if member.returns: signature += f" -> {ast.unparse(member.returns)}"
+                    symbols.append(ProjectSymbol(path, f"{node.name}.{member.name}", "method", member.lineno, signature))
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not node.name.startswith("_"):
             prefix = "async " if isinstance(node, ast.AsyncFunctionDef) else ""
             sig = f"{prefix}def {node.name}({ast.unparse(node.args)})"
             if node.returns: sig += f" -> {ast.unparse(node.returns)}"
             symbols.append(ProjectSymbol(path, node.name, "function", node.lineno, sig))
-    return imports, symbols, "parsed", diagnostics
+    return imports, symbols, "parsed", diagnostics, tree
+
+
+
+def _literal_string_sequence(node: ast.AST | None) -> tuple[str, ...] | None:
+    if not isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return None
+    values = []
+    for item in node.elts:
+        if not isinstance(item, ast.Constant) or not isinstance(item.value, str):
+            return None
+        values.append(item.value)
+    return tuple(values)
+
+
+def _module_contract(path: str, tree: ast.Module,
+                     symbols: list[ProjectSymbol]) -> tuple[ProjectModuleContract, list[dict[str, Any]]]:
+    declared = False
+    dynamic = False
+    exported: tuple[str, ...] | None = None
+    diagnostics: list[dict[str, Any]] = []
+    for node in tree.body:
+        value = None
+        is_all = False
+        if isinstance(node, ast.Assign):
+            is_all = any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets)
+            value = node.value
+        elif isinstance(node, ast.AnnAssign):
+            is_all = isinstance(node.target, ast.Name) and node.target.id == "__all__"
+            value = node.value
+        elif isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name) and node.target.id == "__all__":
+            is_all = True
+            value = node.value
+        if not is_all:
+            continue
+        declared = True
+        literal = _literal_string_sequence(value)
+        if literal is None:
+            dynamic = True
+            exported = None
+        elif isinstance(node, ast.AugAssign):
+            if isinstance(node.op, ast.Add) and exported is not None:
+                exported = exported + literal
+            else:
+                dynamic = True
+                exported = None
+        else:
+            exported = literal
+    all_public_symbols = tuple(sorted(
+        (item for item in symbols if item.path == path),
+        key=lambda item: (item.line, item.name),
+    ))
+    reexports: set[str] = set()
+    wildcard_reexport = False
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                bound_name = alias.asname or alias.name.split(".", 1)[0]
+                if not bound_name.startswith("_"):
+                    reexports.add(bound_name)
+        elif isinstance(node, ast.ImportFrom) and node.module != "__future__":
+            for alias in node.names:
+                if alias.name == "*":
+                    wildcard_reexport = True
+                    continue
+                bound_name = alias.asname or alias.name
+                if not bound_name.startswith("_"):
+                    reexports.add(bound_name)
+    reexported_names = tuple(sorted(reexports, key=str.casefold))
+    inferred_names = tuple(sorted(
+        {item.name for item in all_public_symbols if item.kind in {"class", "function"}} | reexports,
+        key=str.casefold,
+    ))
+    if wildcard_reexport:
+        diagnostics.append({"path": path, "code": "python-wildcard-reexport-unsupported",
+                            "severity": "warning"})
+    if declared and exported is not None and not dynamic:
+        names = tuple(dict.fromkeys(exported))
+        allowed = set(names)
+        public_symbols = tuple(item for item in all_public_symbols
+                               if item.name in allowed or (
+                                   item.kind == "method" and item.name.split(".", 1)[0] in allowed
+                               ))
+        confidence = "declared_static_all"
+    elif declared:
+        names = inferred_names
+        public_symbols = all_public_symbols
+        confidence = "dynamic_all_fallback"
+        diagnostics.append({"path": path, "code": "python-dynamic-all-unsupported",
+                            "severity": "warning"})
+    else:
+        names = inferred_names
+        public_symbols = all_public_symbols
+        confidence = "inferred_public_definitions_and_imports" if reexports else "inferred_public_definitions"
+    return ProjectModuleContract(path, _module_name(path), declared, names,
+                                 reexported_names, public_symbols, confidence), diagnostics
 
 
 def _has_main_guard(tree: ast.AST) -> bool:
@@ -436,7 +555,7 @@ def analyze_project(snapshot: ProjectSnapshot) -> ProjectAnalysis:
     """Build a deterministic static inventory; never import or execute project source."""
     if not isinstance(snapshot, ProjectSnapshot): raise ProjectContractError("A ProjectSnapshot is required")
     files = []
-    modules, imports, symbols, diagnostics, counts, entry_points, manifest_dependencies = [], [], [], [], {}, [], []
+    modules, imports, symbols, diagnostics, counts, entry_points, manifest_dependencies, module_contracts = [], [], [], [], {}, [], [], []
     for entry in snapshot.files:
         language = _LANGUAGES.get(PurePosixPath(entry.path).suffix.casefold())
         is_manifest = PurePosixPath(entry.path).name.casefold() in _MANIFEST_NAMES and "/" not in entry.path
@@ -455,17 +574,21 @@ def analyze_project(snapshot: ProjectSnapshot) -> ProjectAnalysis:
         counts[language] = counts.get(language, 0) + 1
         module, status = (_module_name(path), "inventory_only") if language == "python" else (None, "inventory_only")
         if language == "python":
-            imps, syms, status, diags = _parse_python(path, raw, known)
+            try:
+                imps, syms, status, diags, tree = _parse_python(path, raw, known)
+            except RecursionError:
+                imps, syms, status, tree = [], [], "resource_limit", None
+                diags = [{"path": path, "code": "python-ast-render-recursion-limit", "severity": "error"}]
             imports.extend(imps); symbols.extend(syms); diagnostics.extend(diags)
             if status == "parsed":
-                try:
-                    tree = ast.parse(raw.decode("utf-8"), filename=path, type_comments=True)
-                    if PurePosixPath(path).name == "__main__.py":
-                        entry_points.append({"path": path, "module": (_module_name(path) or "").removesuffix(".__main__"), "kind": "python_module"})
-                    if _has_main_guard(tree):
-                        entry_points.append({"path": path, "module": _module_name(path), "kind": "main_guard"})
-                except (SyntaxError, RecursionError, UnicodeDecodeError):
-                    pass
+                contract, contract_diags = _module_contract(path, tree, syms)
+                module_contracts.append(contract)
+                diagnostics.extend(contract_diags)
+            if status == "parsed":
+                if PurePosixPath(path).name == "__main__.py":
+                    entry_points.append({"path": path, "module": (_module_name(path) or "").removesuffix(".__main__"), "kind": "python_module"})
+                if _has_main_guard(tree):
+                    entry_points.append({"path": path, "module": _module_name(path), "kind": "main_guard"})
         modules.append(ProjectModule(path, language, module, hashlib.sha256(raw).hexdigest(), len(raw), status))
     modules.sort(key=lambda x: x.path.casefold())
     imports.sort(key=lambda x: (x.source_path.casefold(), x.line, x.target))
@@ -474,6 +597,7 @@ def analyze_project(snapshot: ProjectSnapshot) -> ProjectAnalysis:
     graph = _dependency_graph(modules, imports, entry_points)
     ordered_manifests = tuple(sorted(manifest_dependencies, key=lambda item: (item.ecosystem, item.manifest_path, item.group, item.name.casefold(), item.requirement)))
     external_usage = _external_dependency_usage(imports, manifest_dependencies)
+    module_contracts.sort(key=lambda item: item.path.casefold())
     return ProjectAnalysis(snapshot.fingerprint, len(modules), tuple(sorted(counts.items())),
         tuple(modules), tuple(imports), tuple(symbols), tuple(diagnostics), graph,
-        ordered_manifests, external_usage)
+        ordered_manifests, external_usage, tuple(module_contracts))
