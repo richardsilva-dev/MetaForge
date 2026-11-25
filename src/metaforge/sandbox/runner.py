@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -190,18 +191,40 @@ class SandboxRunner:
             )
             return self._preparation
 
-    def _stop_container(self, runtime: str, cid_file: Path, env: dict[str, str]) -> None:
+    def _stop_container(
+        self,
+        runtime: str,
+        cid_file: Path,
+        env: dict[str, str],
+        container_name: str,
+    ) -> None:
         try:
-            container_id = cid_file.read_text(encoding="utf-8").strip()
+            container_ref = cid_file.read_text(encoding="utf-8").strip()
         except OSError:
+            container_ref = ""
+        has_container_id = bool(re.fullmatch(r"[A-Fa-f0-9]{12,64}", container_ref))
+        if not has_container_id:
+            container_ref = container_name
+        if not (
+            has_container_id
+            or re.fullmatch(r"metaforge-[0-9a-f]{32}", container_ref)
+        ):
             return
-        if not re.fullmatch(r"[A-Fa-f0-9]{12,64}", container_id):
-            return
-        for command in ([runtime, "kill", container_id], [runtime, "rm", "-f", container_id]):
-            try:
-                subprocess.run(command, capture_output=True, timeout=3, env=env, check=False)
-            except (OSError, subprocess.TimeoutExpired):
-                pass
+
+        attempts = 1 if has_container_id else 3
+        for attempt in range(attempts):
+            for command in (
+                [runtime, "kill", container_ref],
+                [runtime, "rm", "-f", container_ref],
+            ):
+                try:
+                    subprocess.run(
+                        command, capture_output=True, timeout=3, env=env, check=False
+                    )
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
+            if attempt + 1 < attempts:
+                time.sleep(0.1)
 
     def smoke(self, timeout_seconds: float | None = None) -> SandboxResult:
         """Run only the fixed trusted isolation probe; never executes model output."""
@@ -275,9 +298,10 @@ class SandboxRunner:
             workspace.chmod(0o755)
             cid_directory = tempfile.TemporaryDirectory(prefix="metaforge-cid-")
             cid_file = Path(cid_directory.name) / "container.id"
+            container_name = f"metaforge-{uuid.uuid4().hex}"
             mount = f"type=bind,source={workspace},target=/workspace,readonly"
             command = [
-                runtime, "run", "--rm", "--pull=never", f"--cidfile={cid_file}",
+                runtime, "run", "--rm", "--pull=never", f"--name={container_name}", f"--cidfile={cid_file}",
                 "--network=none", "--read-only", f"--memory={self.policy.memory_mb}m",
                 f"--memory-swap={self.policy.memory_mb}m", f"--cpus={self.policy.cpu_limit}",
                 f"--pids-limit={self.policy.pids_limit}", "--cap-drop=ALL",
@@ -335,7 +359,7 @@ class SandboxRunner:
                     timed_out = True
                     break
             if overflow.is_set() or timed_out:
-                self._stop_container(runtime, cid_file, env)
+                self._stop_container(runtime, cid_file, env, container_name)
                 try:
                     process.kill()
                 except OSError:
