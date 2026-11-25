@@ -228,7 +228,7 @@ def test_static_module_contract_uses_literal_all_and_public_signatures(tmp_path)
     assert contract["declared_all"] is True
     assert contract["exported_names"] == ["PublicAPI", "run"]
     assert contract["confidence"] == "declared_static_all"
-    assert {"PublicAPI", "PublicAPI.execute", "run"} <= symbol_names
+    assert {"PublicAPI", "PublicAPI.__init__", "PublicAPI.execute", "run"} <= symbol_names
     assert "PublicAPI._internal" not in symbol_names
     assert "_private" not in symbol_names
     assert report["schema_version"] == "1.2"
