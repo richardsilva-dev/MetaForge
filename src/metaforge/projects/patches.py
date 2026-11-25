@@ -4,9 +4,7 @@ import hashlib
 import os
 from pathlib import Path, PurePosixPath
 import shutil
-import stat
 import tempfile
-from typing import Any
 
 from metaforge.projects.models import (
     FileChange,
@@ -26,6 +24,8 @@ def validate_patch_against_snapshot(
 ) -> None:
     """Validate every operation against a captured immutable source manifest."""
     policy = policy or ProjectPolicy()
+    if not isinstance(policy, ProjectPolicy):
+        raise ProjectContractError("A ProjectPolicy is required")
     if not isinstance(snapshot, ProjectSnapshot) or not isinstance(patch, ProjectPatch):
         raise ProjectContractError("A ProjectSnapshot and ProjectPatch are required")
     if len(patch.changes) > policy.max_patch_files:
@@ -142,6 +142,8 @@ def apply_patch_to_copy(
     command is executed by this function.
     """
     policy = policy or ProjectPolicy()
+    if not isinstance(policy, ProjectPolicy):
+        raise ProjectContractError("A ProjectPolicy is required")
     if not isinstance(snapshot, ProjectSnapshot):
         raise ProjectContractError("A ProjectSnapshot is required")
     if not isinstance(patch, ProjectPatch):
@@ -153,7 +155,10 @@ def apply_patch_to_copy(
         raise ProjectContractError("Source project changed after snapshot capture")
     validate_patch_against_snapshot(snapshot, patch, policy)
 
-    supplied_destination = Path(destination).expanduser()
+    try:
+        supplied_destination = Path(destination).expanduser()
+    except (TypeError, ValueError) as exc:
+        raise ProjectContractError("Destination must be a valid filesystem path") from exc
     if not supplied_destination.name or supplied_destination.name in {".", ".."}:
         raise ProjectContractError("Destination must name a new directory")
     parent = supplied_destination.parent.resolve(strict=True)
