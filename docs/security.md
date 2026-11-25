@@ -25,6 +25,12 @@ MetaForge has two separate evaluation paths.
 - The host independently validates the wrapper's JSON output and timing sample schema.
 - The host API key and other host environment variables are not passed into the container. The model API key is used only by the host-side SDK client.
 
+
+## Project patch installation
+
+- Project changes are staged in a private sibling directory and validated before installation.
+- Final directory installation must be atomic and must never replace a destination created after the initial existence check. Linux uses `renameat2(RENAME_NOREPLACE)`; Windows uses its non-replacing `os.rename` behavior. Unsupported POSIX platforms fail closed rather than falling back to a racy replace operation.
+
 ## Explicit limitations
 
 - A container is not a proof against kernel/runtime vulnerabilities or container escapes. Use a dedicated isolated host or VM for high-risk research.
