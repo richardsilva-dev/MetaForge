@@ -132,7 +132,7 @@ Configure rootless Podman or Docker and a local image pinned by SHA-256 digest, 
 
 With the optional Agents SDK installed and API key/model set in the shell:
 
-    python -m metaforge.cli code-evolve --size 5000 --population-size 2 --generations 2 --repeats 3 --max-agent-calls 4
+    python -m metaforge.cli code-evolve --size 5000 --population-size 2 --generations 2 --repeats 5 --max-agent-calls 4
 
 The source proposal contract currently requires a pure `solve(values)` function returning an ascending list of signed 64-bit integers. Each candidate is evaluated on eight deterministic workload profiles derived from the same integrity-checked dataset: original, ascending, descending, nearly sorted, duplicate-heavy, low-cardinality, organ-pipe, and all-equal. Each profile receives the same repeat count; the selection score is the median of per-workload medians, so a candidate cannot win by exploiting only one input ordering. Proposed code is reviewed, executed in a rootless container with no network, and checked against the independent host-side sorting oracle on every workload. Model output is never trusted as proof of safety or correctness.
 
