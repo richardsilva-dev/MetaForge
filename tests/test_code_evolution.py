@@ -110,7 +110,7 @@ def test_candidate_is_promoted_only_when_it_beats_baseline_by_required_margin():
     designer = FakeDesigner([SOURCE_B])
     sandbox = FasterCandidateRunner()
     engine = CodeEvolutionEngine(
-        designer, sandbox, population_size=1, generations=1, repeats=3,
+        designer, sandbox, population_size=1, generations=1, repeats=5,
         max_agent_calls=1, global_timeout_seconds=60,
     )
     result = engine.run([5, 1, 4, 2, 3])
