@@ -114,7 +114,7 @@ def main() -> int:
 
     project = sub.add_parser("project", help="inspect a project using bounded static analysis")
     project_sub = project.add_subparsers(dest="project_command", required=True)
-    project_analyze = project_sub.add_parser("analyze", help="inventory languages, Python imports, and public symbols without executing project code")
+    project_analyze = project_sub.add_parser("analyze", help="inventory languages, dependency graph, cycles, isolated modules, entry points, and public symbols without executing project code")
     project_analyze.add_argument("root", type=Path)
     project_analyze.add_argument("--output", type=Path, default=Path(".artifacts/project-analysis.json"))
 

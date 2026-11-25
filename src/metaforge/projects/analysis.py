@@ -59,6 +59,7 @@ class ProjectAnalysis:
     imports: tuple[ProjectImport, ...]
     symbols: tuple[ProjectSymbol, ...]
     diagnostics: tuple[dict[str, Any], ...]
+    dependency_graph: dict[str, Any]
     def to_dict(self) -> dict[str, Any]:
         return {
             "schema_version": "1.0", "snapshot_fingerprint": self.snapshot_fingerprint,
@@ -67,6 +68,7 @@ class ProjectAnalysis:
             "imports": [x.to_dict() for x in self.imports],
             "symbols": [x.to_dict() for x in self.symbols],
             "diagnostics": [dict(x) for x in self.diagnostics],
+            "dependency_graph": self.dependency_graph,
             "analysis_scope": {"static_only": True, "executed_project_code": False,
                 "python_ast": True, "other_languages": "file inventory only; dedicated parsers are future work"},
         }
@@ -121,6 +123,108 @@ def _parse_python(path: str, raw: bytes, known: set[str]):
             symbols.append(ProjectSymbol(path, node.name, "function", node.lineno, sig))
     return imports, symbols, "parsed", diagnostics
 
+
+def _has_main_guard(tree: ast.AST) -> bool:
+    for node in tree.body:
+        if not isinstance(node, ast.If):
+            continue
+        test = node.test
+        if isinstance(test, ast.Compare) and len(test.ops) == 1 and len(test.comparators) == 1:
+            left, right = test.left, test.comparators[0]
+            if (isinstance(left, ast.Name) and left.id == "__name__"
+                    and isinstance(right, ast.Constant) and right.value == "__main__"):
+                return True
+            if (isinstance(right, ast.Name) and right.id == "__name__"
+                    and isinstance(left, ast.Constant) and left.value == "__main__"):
+                return True
+    return False
+
+
+def _dependency_graph(modules: list[ProjectModule], imports: list[ProjectImport],
+                      entry_points: list[dict[str, Any]]) -> dict[str, Any]:
+    by_name = {m.module_name: m.path for m in modules
+               if m.language == "python" and m.module_name}
+    nodes = sorted(by_name.keys(), key=str.casefold)
+    module_for_path = {path: name for name, path in by_name.items()}
+    edges_set: set[tuple[str, str]] = set()
+    for item in imports:
+        if item.resolution != "local":
+            continue
+        source = module_for_path.get(item.source_path)
+        target_path = by_name.get(item.target)
+        if target_path is None:
+            candidates = [(name, path) for name, path in by_name.items()
+                          if name.startswith(item.target + ".")]
+            if candidates:
+                target_path = min(candidates, key=lambda pair: (len(pair[0]), pair[0]))[1]
+        target = module_for_path.get(target_path) if target_path else None
+        if source and target:
+            edges_set.add((source, target))
+    edges = sorted(edges_set)
+    adjacency = {node: [] for node in nodes}
+    incoming = {node: 0 for node in nodes}
+    for source, target in edges:
+        adjacency[source].append(target)
+        incoming[target] += 1
+    for values in adjacency.values():
+        values.sort()
+    # Iterative Kosaraju SCC avoids recursion on deep project graphs.
+    visited: set[str] = set()
+    finish_order: list[str] = []
+    for root in nodes:
+        if root in visited:
+            continue
+        visited.add(root)
+        stack = [(root, iter(adjacency[root]))]
+        while stack:
+            node, neighbors = stack[-1]
+            try:
+                neighbor = next(neighbors)
+            except StopIteration:
+                finish_order.append(node)
+                stack.pop()
+                continue
+            if neighbor not in visited:
+                visited.add(neighbor)
+                stack.append((neighbor, iter(adjacency[neighbor])))
+    reverse = {node: [] for node in nodes}
+    for source, targets in adjacency.items():
+        for target in targets:
+            reverse[target].append(source)
+    for values in reverse.values():
+        values.sort()
+    assigned: set[str] = set()
+    cycles: list[list[str]] = []
+    for root in reversed(finish_order):
+        if root in assigned:
+            continue
+        component = []
+        stack = [root]
+        assigned.add(root)
+        while stack:
+            node = stack.pop()
+            component.append(node)
+            for neighbor in reverse[node]:
+                if neighbor not in assigned:
+                    assigned.add(neighbor)
+                    stack.append(neighbor)
+        component.sort()
+        if len(component) > 1 or root in adjacency[root]:
+            cycles.append(component)
+    cycles.sort(key=lambda group: tuple(group))
+    isolated = sorted(node for node in nodes if not adjacency[node] and incoming[node] == 0)
+    return {
+        "nodes": nodes,
+        "edges": [{"source": source, "target": target} for source, target in edges],
+        "cycles": cycles,
+        "isolated_modules": isolated,
+        "entry_points": sorted(entry_points, key=lambda item: (item["path"].casefold(), item["kind"])),
+        "metrics": {"module_count": len(nodes), "edge_count": len(edges),
+                    "cycle_count": len(cycles), "isolated_module_count": len(isolated)},
+        "scope": "Python modules and statically recognized main guards only; no execution",
+    }
+
+
 def analyze_project(snapshot: ProjectSnapshot) -> ProjectAnalysis:
     """Build a deterministic static inventory; never import or execute project source."""
     if not isinstance(snapshot, ProjectSnapshot): raise ProjectContractError("A ProjectSnapshot is required")
@@ -133,17 +237,27 @@ def analyze_project(snapshot: ProjectSnapshot) -> ProjectAnalysis:
             raise ProjectContractError(f"Project file changed after snapshot capture: {entry.path}")
         files.append((entry.path, language, raw))
     known = {name for path, lang, _ in files if lang == "python" and (name := _module_name(path))}
-    modules, imports, symbols, diagnostics, counts = [], [], [], [], {}
+    modules, imports, symbols, diagnostics, counts, entry_points = [], [], [], [], {}, []
     for path, language, raw in files:
         counts[language] = counts.get(language, 0) + 1
         module, status = (_module_name(path), "inventory_only") if language == "python" else (None, "inventory_only")
         if language == "python":
             imps, syms, status, diags = _parse_python(path, raw, known)
             imports.extend(imps); symbols.extend(syms); diagnostics.extend(diags)
+            if status == "parsed":
+                try:
+                    tree = ast.parse(raw.decode("utf-8"), filename=path, type_comments=True)
+                    if PurePosixPath(path).name == "__main__.py":
+                        entry_points.append({"path": path, "module": (_module_name(path) or "").removesuffix(".__main__"), "kind": "python_module"})
+                    if _has_main_guard(tree):
+                        entry_points.append({"path": path, "module": _module_name(path), "kind": "main_guard"})
+                except (SyntaxError, RecursionError, UnicodeDecodeError):
+                    pass
         modules.append(ProjectModule(path, language, module, hashlib.sha256(raw).hexdigest(), len(raw), status))
     modules.sort(key=lambda x: x.path.casefold())
     imports.sort(key=lambda x: (x.source_path.casefold(), x.line, x.target))
     symbols.sort(key=lambda x: (x.path.casefold(), x.line, x.name))
     diagnostics.sort(key=lambda x: (str(x.get("path", "")).casefold(), int(x.get("line", 0))))
+    graph = _dependency_graph(modules, imports, entry_points)
     return ProjectAnalysis(snapshot.fingerprint, len(modules), tuple(sorted(counts.items())),
-        tuple(modules), tuple(imports), tuple(symbols), tuple(diagnostics))
+        tuple(modules), tuple(imports), tuple(symbols), tuple(diagnostics), graph)

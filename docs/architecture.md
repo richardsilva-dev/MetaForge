@@ -38,3 +38,8 @@ The backend protocol separates preparation from repeated algorithm execution. Py
 ## Static project analysis
 
 The \`metaforge project analyze <root>\` command captures the bounded allow-listed project surface and emits a deterministic inventory. It classifies supported source files by language and parses Python with the standard-library AST to extract import edges and public top-level class/function signatures. Syntax errors become diagnostics; project modules are never imported or executed. Other languages are currently inventoried by file type only and require dedicated parsers for dependency and symbol graphs. Every analyzed file is re-read through the secure snapshot reader and checked against its captured SHA-256 before parsing. The JSON report records the snapshot fingerprint and explicit analysis scope.
+
+
+### Static dependency graph
+
+The static project report also includes a Python dependency graph derived only from import statements resolved to modules present in the captured snapshot. It reports directed edges, strongly connected components (cycles), isolated modules, and graph metrics. Cycle detection is iterative to avoid recursion-depth failure on long dependency chains. Entry points are limited to explicit `__main__.py` modules and syntactic `if __name__ == "__main__"` guards. These are structural indicators, not proof that a package is installable or that an entry point executes successfully. Imports that cannot be resolved within the captured Python module inventory remain external-or-unresolved and are excluded from graph edges. No project code, build backend, plugin, or dependency manifest is executed or loaded.
