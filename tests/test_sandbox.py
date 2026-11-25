@@ -467,3 +467,46 @@ def test_sandbox_policy_bounds_project_workspace_size():
         SandboxPolicy(image=IMAGE, max_project_bytes=512)
     with pytest.raises(ValueError):
         SandboxPolicy(image=IMAGE, max_project_files=True)
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="worker supervisor is a Linux process")
+def test_trusted_worker_and_supervisor_return_unittest_summary_without_test_output(tmp_path):
+    import subprocess
+
+    from metaforge.sandbox.runner import _PROJECT_UNITTEST_SOURCE, _RUNNER_SOURCE, _WORKER_SOURCE
+
+    workspace = tmp_path
+    project_tests = workspace / "project" / "tests"
+    project_tests.mkdir(parents=True)
+    (project_tests / "test_basic.py").write_text(
+        "import unittest\n"
+        "class BasicTests(unittest.TestCase):\n"
+        "    def test_pass(self): self.assertEqual(2, 2)\n"
+        "    def test_fail(self): self.assertEqual(1, 2)\n",
+        encoding="utf-8",
+    )
+    runner_path = workspace / "runner.py"
+    worker_path = workspace / "candidate_worker.py"
+    candidate_path = workspace / "candidate.py"
+    input_path = workspace / "input.json"
+    runner_path.write_text(_RUNNER_SOURCE, encoding="utf-8")
+    worker_path.write_text(_WORKER_SOURCE, encoding="utf-8")
+    candidate_path.write_text(_PROJECT_UNITTEST_SOURCE, encoding="utf-8")
+    input_path.write_text(json.dumps({"values": []}), encoding="utf-8")
+
+    completed = subprocess.run(
+        [sys.executable, "-I", str(runner_path), str(candidate_path), str(input_path),
+         str(worker_path), "1", "0", "10", "1000000"],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    assert payload["output"] == []
+    assert payload["test_summary"] == {
+        "tests_run": 2, "failures": 1, "errors": 0, "skipped": 0, "successful": False,
+    }
+    assert "AssertionError" not in completed.stdout
