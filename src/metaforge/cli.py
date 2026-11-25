@@ -304,6 +304,11 @@ def main() -> int:
                 "schema_version": "1.0",
                 "snapshot_fingerprint": snapshot.fingerprint,
                 "test_targets": plan["test_targets"],
+                "execution_profile": "python_unittest_only",
+                "executed_test_targets": [item["path"] for item in plan["test_targets"]
+                                         if item["ecosystem"] == "python" and execution.executed is True],
+                "not_executed_test_targets": [item["path"] for item in plan["test_targets"]
+                                              if not (item["ecosystem"] == "python" and execution.executed is True)],
                 "sandbox_profile": {
                     "runtime": sandbox_policy.runtime,
                     "image": sandbox_policy.image,
