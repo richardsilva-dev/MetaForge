@@ -4,6 +4,7 @@ import hashlib
 import os
 from pathlib import Path, PurePosixPath
 import shutil
+import stat
 import tempfile
 
 from metaforge.projects.models import (
@@ -153,7 +154,7 @@ def apply_patch_to_copy(
         source_metadata = supplied_source_root.lstat()
     except OSError as exc:
         raise ProjectContractError("Snapshot source root is unavailable") from exc
-    if not supplied_source_root.is_dir() or supplied_source_root.is_symlink():
+    if stat.S_ISLNK(source_metadata.st_mode) or not stat.S_ISDIR(source_metadata.st_mode):
         raise ProjectContractError("Snapshot source root must remain a real directory")
     source_root = supplied_source_root.resolve(strict=True)
     current_snapshot = capture_project_snapshot(source_root, policy)
