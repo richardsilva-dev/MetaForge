@@ -306,6 +306,7 @@ class CodeReplayEngine:
                 if baseline_score else 0.0
             ),
             "candidate_promoted": bool(promoted),
+            "verification_stage": "replay_gate_passed" if promoted else "trusted_baseline_retained",
         }
         return {
             "schema_version": "1.1",
