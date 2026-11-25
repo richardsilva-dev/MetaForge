@@ -73,14 +73,30 @@ def test_secret_scan_ignores_common_placeholders_and_environment_references(tmp_
             'client_secret = os.getenv("CLIENT_SECRET")',
             'auth_token = process.env.AUTH_TOKEN',
             'private_key = None',
+        ]),
+        encoding="utf-8",
+    )
+    report = scan_project_secrets(capture_project_snapshot(root))
+
+    assert report.no_detected_secrets is True
+    assert report.findings == ()
+
+
+def test_secret_scan_detects_prefixed_and_standalone_secret_assignments(tmp_path):
+    root = tmp_path / "project"
+    (root / "src").mkdir(parents=True)
+    (root / "src" / "settings.py").write_text(
+        "\\n".join([
+            'AWS_SECRET_ACCESS_KEY = "aws-secret-value-123456"',
+            'DATABASE_PASSWORD = "database-password-value-123"',
             'SECRET = "standalone-secret-value-987"',
         ]),
         encoding="utf-8",
     )
     report = scan_project_secrets(capture_project_snapshot(root))
 
+    assert sum(item.rule_id == "credential-assignment" for item in report.findings) == 3
     assert report.no_detected_secrets is False
-    assert any(item.rule_id == "credential-assignment" for item in report.findings)
 
 
 def test_secret_scan_detects_private_key_header(tmp_path):
