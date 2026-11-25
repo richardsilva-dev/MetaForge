@@ -117,3 +117,30 @@ def test_validation_plan_cli_writes_static_report(tmp_path, monkeypatch):
     plan = json.loads(output.read_text(encoding="utf-8"))
     assert plan["risk_summary"]["test_targets"] == 1
     assert plan["execution_scope"]["tests_executed"] is False
+
+
+def test_validate_tests_cli_refuses_pytest_without_invoking_runtime(tmp_path, monkeypatch):
+    import sys
+    from metaforge.cli import main
+
+    root = tmp_path / "project"
+    root.mkdir()
+    _project(root)
+    tests = root / "tests"
+    tests.mkdir()
+    (tests / "test_pytest.py").write_text(
+        "import pytest\ndef test_example(): assert True\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("METAFORGE_SANDBOX_IMAGE", "registry.example/python@sha256:" + "a" * 64)
+    monkeypatch.setenv("METAFORGE_SANDBOX_RUNTIME", "podman")
+    output = tmp_path / "execution.json"
+    monkeypatch.setattr(sys, "argv", [
+        "metaforge", "project", "validate-tests", str(root),
+        "--execute-unittest", "--output", str(output),
+    ])
+
+    assert main() == 1
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert report["execution_result"]["supported"] is False
+    assert report["execution_result"]["executed"] is False
+    assert report["execution_scope"]["project_code_executed"] is False

@@ -41,7 +41,7 @@ def _test_kind(path: str) -> tuple[str, str] | None:
     suffix = PurePosixPath(name).suffix
     in_tests = any(part in {"test", "tests", "__tests__", "spec", "specs"} for part in lowered[:-1])
 
-    if suffix == ".py" and (in_tests or name.startswith("test_") or name.endswith("_test.py")):
+    if suffix == ".py" and (name.startswith("test") or name.endswith("_test.py")):
         return "python", "Python test file pattern"
     if name.endswith("_test.go"):
         return "go", "Go *_test.go convention"

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import shutil
 import subprocess
@@ -27,6 +28,9 @@ _trusted_any = any
 _trusted_callable = callable
 _trusted_list_type = list
 _trusted_int_type = int
+_trusted_dict_type = dict
+_trusted_set_type = set
+_trusted_bool_type = bool
 
 def fail(code):
     raise _trusted_system_exit(code)
@@ -98,10 +102,63 @@ if _trusted_type(result) is not _trusted_list_type or _trusted_any(
     _trusted_type(value) is not _trusted_int_type for value in result
 ):
     fail(31)
-_trusted_stdout_write(_trusted_json_dumps(
-    {"output": result}, separators=(",", ":")
-) + "\n")
+response = {"output": result}
+summary = namespace.get("__metaforge_test_summary__")
+if summary is not None:
+    expected_keys = {"tests_run", "failures", "errors", "skipped", "successful"}
+    if _trusted_type(summary) is not _trusted_dict_type or _trusted_set_type(summary) != expected_keys:
+        fail(46)
+    for key in ("tests_run", "failures", "errors", "skipped"):
+        if _trusted_type(summary[key]) is not _trusted_int_type or summary[key] < 0:
+            fail(47)
+    if _trusted_type(summary["successful"]) is not _trusted_bool_type:
+        fail(48)
+    response["test_summary"] = {
+        "tests_run": summary["tests_run"],
+        "failures": summary["failures"],
+        "errors": summary["errors"],
+        "skipped": summary["skipped"],
+        "successful": summary["successful"],
+    }
+_trusted_stdout_write(_trusted_json_dumps(response, separators=(",", ":")) + "\n")
 
+"""
+
+
+_PROJECT_UNITTEST_SOURCE = r"""
+import contextlib, io, os, sys, unittest
+
+workspace_root = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.join(workspace_root, "project")
+tests_root = os.path.join(project_root, "tests")
+source_root = os.path.join(project_root, "src")
+sys.path.insert(0, project_root)
+if os.path.isdir(source_root):
+    sys.path.insert(0, source_root)
+os.chdir(project_root)
+
+summary = {"tests_run": 0, "failures": 0, "errors": 0, "skipped": 0, "successful": False}
+if os.path.isdir(tests_root):
+    top_level = project_root if os.path.isfile(os.path.join(tests_root, "__init__.py")) else tests_root
+    try:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            loader = unittest.TestLoader()
+            suite = loader.discover(start_dir=tests_root, top_level_dir=top_level)
+            result = unittest.TextTestRunner(stream=io.StringIO(), verbosity=0).run(suite)
+        summary = {
+            "tests_run": int(result.testsRun),
+            "failures": len(result.failures),
+            "errors": len(result.errors),
+            "skipped": len(result.skipped),
+            "successful": bool(result.wasSuccessful() and result.testsRun > 0),
+        }
+    except Exception:
+        summary = {"tests_run": 0, "failures": 0, "errors": 1, "skipped": 0, "successful": False}
+
+__metaforge_test_summary__ = summary
+
+def solve(values):
+    return []
 """
 
 _RUNNER_SOURCE = r"""
@@ -189,6 +246,9 @@ _trusted_type = type
 _trusted_any = any
 _trusted_list_type = list
 _trusted_int_type = int
+_trusted_dict_type = dict
+_trusted_set_type = set
+_trusted_bool_type = bool
 _trusted_range = range
 _trusted_monotonic = time.monotonic
 _trusted_popen = subprocess.Popen
@@ -309,9 +369,21 @@ for _ in _trusted_range(repeat_count):
         child_payload = _trusted_json_loads(child_stdout.decode("utf-8"))
     except (UnicodeDecodeError, ValueError):
         fail(38)
-    if not isinstance(child_payload, dict) or set(child_payload) != {"output"}:
+    if not isinstance(child_payload, dict) or set(child_payload) not in (
+        {"output"}, {"output", "test_summary"}
+    ):
         fail(39)
     result = child_payload["output"]
+    test_summary = child_payload.get("test_summary")
+    if test_summary is not None:
+        expected_summary_keys = {"tests_run", "failures", "errors", "skipped", "successful"}
+        if type(test_summary) is not _trusted_dict_type or _trusted_set_type(test_summary) != expected_summary_keys:
+            fail(46)
+        for key in ("tests_run", "failures", "errors", "skipped"):
+            if type(test_summary[key]) is not _trusted_int_type or test_summary[key] < 0:
+                fail(47)
+        if type(test_summary["successful"]) is not _trusted_bool_type:
+            fail(48)
     if _trusted_type(result) is not _trusted_list_type or _trusted_any(
         _trusted_type(value) is not _trusted_int_type for value in result
     ):
@@ -320,9 +392,10 @@ for _ in _trusted_range(repeat_count):
         fail(41)
     samples_ns.append(max(0, elapsed))
 
-_trusted_stdout_write(json.dumps(
-    {"output": result, "samples_ns": samples_ns}, separators=(",", ":")
-) + "\n")
+response = {"output": result, "samples_ns": samples_ns}
+if test_summary is not None:
+    response["test_summary"] = test_summary
+_trusted_stdout_write(json.dumps(response, separators=(",", ":")) + "\n")
 
 """
 
@@ -336,6 +409,20 @@ class SandboxPreparation:
 
 
 @dataclass(frozen=True, slots=True)
+class ProjectTestExecutionResult:
+    supported: bool
+    executed: bool | None
+    success: bool
+    tests_run: int
+    failures: int
+    errors: int
+    skipped: int
+    wall_seconds: float
+    measurement_scope: str
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class SandboxResult:
     success: bool
     output: list[int] | None
@@ -343,6 +430,8 @@ class SandboxResult:
     measurement_scope: str
     error: str | None = None
     algorithm_samples_seconds: tuple[float, ...] = ()
+    test_summary: dict[str, int | bool] | None = None
+    execution_started: bool = False
 
 
 class SandboxRunner:
@@ -472,6 +561,83 @@ class SandboxRunner:
             smoke_probe=True,
         )
 
+    def run_project_unittest(
+        self,
+        snapshot: Any,
+        timeout_seconds: float | None = None,
+    ) -> ProjectTestExecutionResult:
+        """Run only statically identified unittest suites inside the rootless sandbox."""
+        started = time.perf_counter()
+        scope = "rootless_container_external_candidate_process_wall_time_including_startup"
+        from metaforge.projects.models import ProjectSnapshot
+        from metaforge.projects.snapshot import _read_relative_regular_file, capture_project_snapshot
+        from metaforge.projects.analysis import analyze_project
+        from metaforge.projects.validation import build_validation_plan
+
+        if not isinstance(snapshot, ProjectSnapshot):
+            return ProjectTestExecutionResult(False, False, False, 0, 0, 0, 0, 0.0, "not_executed",
+                                              "A ProjectSnapshot is required")
+        try:
+            current = capture_project_snapshot(snapshot.root)
+            if current.fingerprint != snapshot.fingerprint:
+                raise ValueError("Project snapshot changed before sandbox staging")
+            analysis = analyze_project(snapshot)
+            plan = build_validation_plan(snapshot, analysis)
+        except Exception:
+            return ProjectTestExecutionResult(False, False, False, 0, 0, 0, 0, 0.0, "not_executed",
+                                              "Project preflight failed")
+
+        python_targets = [item for item in plan["test_targets"] if item["ecosystem"] == "python"]
+        if not python_targets or any(item["framework_candidates"] != ["unittest"] for item in python_targets):
+            return ProjectTestExecutionResult(False, False, False, 0, 0, 0, 0, 0.0, "not_executed",
+                                              "Only explicitly identified Python unittest suites are supported")
+        if any(not item["path"].startswith("tests/") for item in python_targets):
+            return ProjectTestExecutionResult(False, False, False, 0, 0, 0, 0, 0.0, "not_executed",
+                                              "Python unittest files must be under tests/")
+        file_paths = {entry.path for entry in snapshot.files}
+        for item in python_targets:
+            parent = PurePosixPath(item["path"]).parent
+            while str(parent) != "tests":
+                if f"{parent}/__init__.py" not in file_paths:
+                    return ProjectTestExecutionResult(False, False, False, 0, 0, 0, 0, 0.0, "not_executed",
+                                                      "Nested unittest directories must be Python packages")
+                parent = parent.parent
+
+        additional_files: dict[str, bytes] = {}
+        total_bytes = 0
+        try:
+            for entry in snapshot.files:
+                raw = _read_relative_regular_file(snapshot.root, entry.path, self.policy.max_project_bytes)
+                if len(raw) != entry.size_bytes or hashlib.sha256(raw).hexdigest() != entry.sha256:
+                    raise ValueError("Snapshot file changed during staging")
+                total_bytes += len(raw)
+                if total_bytes > self.policy.max_project_bytes:
+                    raise ValueError("Project workspace size limit exceeded")
+                additional_files[entry.path] = raw
+        except Exception:
+            return ProjectTestExecutionResult(False, False, False, 0, 0, 0, 0, 0.0, "not_executed",
+                                              "Project snapshot could not be staged safely")
+
+        sandbox_result = self.run_python(
+            _PROJECT_UNITTEST_SOURCE,
+            [],
+            timeout_seconds=timeout_seconds,
+            repeats=1,
+            additional_files=additional_files,
+        )
+        if not sandbox_result.success or sandbox_result.test_summary is None:
+            return ProjectTestExecutionResult(
+                True, (True if sandbox_result.test_summary is not None else (None if sandbox_result.execution_started else False)), False, 0, 0, 0, 0, sandbox_result.wall_seconds, scope,
+                "Sandboxed unittest execution failed or returned an invalid summary",
+            )
+        summary = sandbox_result.test_summary
+        successful = bool(summary["successful"]) and summary["tests_run"] > 0
+        return ProjectTestExecutionResult(
+            True, True, successful, int(summary["tests_run"]), int(summary["failures"]),
+            int(summary["errors"]), int(summary["skipped"]), sandbox_result.wall_seconds,
+            scope, None if successful else "One or more tests failed or no tests were discovered",
+        )
+
     def run_python(
         self,
         source_code: str,
@@ -479,6 +645,7 @@ class SandboxRunner:
         timeout_seconds: float | None = None,
         repeats: int = 1,
         smoke_probe: bool = False,
+        additional_files: dict[str, bytes] | None = None,
     ) -> SandboxResult:
         started = time.perf_counter()
         scope = "rootless_container_external_candidate_process_wall_time_including_startup"
@@ -506,6 +673,27 @@ class SandboxRunner:
         if type(smoke_probe) is not bool:
             return SandboxResult(False, None, time.perf_counter() - started, scope,
                                  "smoke_probe must be boolean")
+        if additional_files is not None:
+            if not isinstance(additional_files, dict) or len(additional_files) > self.policy.max_project_files:
+                return SandboxResult(False, None, time.perf_counter() - started, scope,
+                                     "Additional project file count limit exceeded")
+            total_project_bytes = 0
+            reserved = {"candidate.py", "input.json", "runner.py", "candidate_worker.py"}
+            for relative_path, content in additional_files.items():
+                if (not isinstance(relative_path, str) or not relative_path or len(relative_path) > 1024 or not isinstance(content, bytes)
+                        or "\\" in relative_path or ":" in relative_path
+                        or any(ord(char) < 32 for char in relative_path)
+                        or any(part in {"", ".", ".."} for part in relative_path.split("/"))):
+                    return SandboxResult(False, None, time.perf_counter() - started, scope,
+                                         "Additional project path is invalid")
+                relative = PurePosixPath(relative_path)
+                if relative.is_absolute() or relative.parts[0] in reserved:
+                    return SandboxResult(False, None, time.perf_counter() - started, scope,
+                                         "Additional project path is reserved or absolute")
+                total_project_bytes += len(content)
+                if total_project_bytes > self.policy.max_project_bytes:
+                    return SandboxResult(False, None, time.perf_counter() - started, scope,
+                                         "Additional project byte limit exceeded")
         local_timeout = self.policy.timeout_seconds if timeout_seconds is None else min(
             self.policy.timeout_seconds, timeout_seconds
         )
@@ -525,6 +713,17 @@ class SandboxRunner:
             if "," in str(workspace):
                 return SandboxResult(False, None, time.perf_counter() - started, scope,
                                      "Workspace path contains an unsupported mount delimiter")
+            if additional_files:
+                project_root = workspace / "project"
+                try:
+                    for relative_path, content in additional_files.items():
+                        destination = project_root.joinpath(*PurePosixPath(relative_path).parts)
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        with destination.open("xb") as handle:
+                            handle.write(content)
+                except OSError as exc:
+                    return SandboxResult(False, None, time.perf_counter() - started, scope,
+                                         f"Additional project staging failed: {type(exc).__name__}")
             source_path = workspace / "candidate.py"
             source_path.write_bytes(source_bytes)
             input_path = workspace / "input.json"
@@ -614,30 +813,40 @@ class SandboxRunner:
             elapsed = time.perf_counter() - started
             cid_directory.cleanup()
             if timed_out:
-                return SandboxResult(False, None, elapsed, scope, "Sandbox execution timed out")
+                return SandboxResult(False, None, elapsed, scope, "Sandbox execution timed out", execution_started=True)
             if overflow.is_set():
-                return SandboxResult(False, None, elapsed, scope, "Sandbox output limit exceeded")
+                return SandboxResult(False, None, elapsed, scope, "Sandbox output limit exceeded", execution_started=True)
             if process.returncode != 0:
                 detail = stderr.decode("utf-8", errors="replace").strip()[:2000]
                 error = f"Sandbox process returned non-zero status ({process.returncode})"
                 if detail:
                     error += f": {detail}"
-                return SandboxResult(False, None, elapsed, scope, error)
+                return SandboxResult(False, None, elapsed, scope, error, execution_started=True)
             try:
                 parsed = json.loads(stdout.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError):
-                return SandboxResult(False, None, elapsed, scope, "Sandbox returned invalid JSON")
-            if not isinstance(parsed, dict) or set(parsed) != {"output", "samples_ns"}:
-                return SandboxResult(False, None, elapsed, scope, "Sandbox output schema is invalid")
+                return SandboxResult(False, None, elapsed, scope, "Sandbox returned invalid JSON", execution_started=True)
+            if not isinstance(parsed, dict) or set(parsed) not in (
+                {"output", "samples_ns"}, {"output", "samples_ns", "test_summary"}
+            ):
+                return SandboxResult(False, None, elapsed, scope, "Sandbox output schema is invalid", execution_started=True)
             output = parsed["output"]
             samples_ns = parsed["samples_ns"]
+            test_summary = parsed.get("test_summary")
+            if test_summary is not None:
+                expected_summary_keys = {"tests_run", "failures", "errors", "skipped", "successful"}
+                if (not isinstance(test_summary, dict) or set(test_summary) != expected_summary_keys
+                        or any(type(test_summary[key]) is not int or test_summary[key] < 0
+                               for key in ("tests_run", "failures", "errors", "skipped"))
+                        or type(test_summary["successful"]) is not bool):
+                    return SandboxResult(False, None, elapsed, scope, "Sandbox test summary is invalid", execution_started=True)
             if not isinstance(output, list) or any(type(value) is not int for value in output):
-                return SandboxResult(False, None, elapsed, scope, "Sandbox output values are invalid")
+                return SandboxResult(False, None, elapsed, scope, "Sandbox output values are invalid", execution_started=True)
             if not isinstance(samples_ns, list) or len(samples_ns) != repeats or any(
                 type(value) is not int or value < 0 for value in samples_ns
             ):
-                return SandboxResult(False, None, elapsed, scope, "Sandbox timing samples are invalid")
+                return SandboxResult(False, None, elapsed, scope, "Sandbox timing samples are invalid", execution_started=True)
             if output != sorted(values):
-                return SandboxResult(False, None, elapsed, scope, "Independent correctness check failed")
+                return SandboxResult(False, None, elapsed, scope, "Independent correctness check failed", execution_started=True)
             samples = tuple(value / 1_000_000_000 for value in samples_ns)
-            return SandboxResult(True, output, elapsed, scope, None, samples)
+            return SandboxResult(True, output, elapsed, scope, None, samples, test_summary, True)

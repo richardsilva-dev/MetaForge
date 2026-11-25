@@ -145,3 +145,25 @@ Command:
 The report separates completed static checks from test execution, runtime security,
 and performance validation, which remain explicitly not executed until a compatible
 isolated toolchain profile is selected.
+
+
+### Explicit sandboxed Python unittest execution
+
+The first execution profile supports only Python unittest suites that are statically
+identified by explicit unittest imports, are located under `tests/`, and use package
+initializers for nested test directories. Pytest and other frameworks are not invoked.
+The project snapshot is rechecked and copied into a bounded, read-only rootless
+container workspace. The container has no network, no capabilities, no-new-privileges,
+bounded memory/CPU/PIDs/output, and a noexec temporary filesystem. No package
+installation or build command is performed.
+
+Execution requires an explicit opt-in:
+
+    python -m metaforge.cli project validate-tests <project-root> --execute-unittest
+
+The command requires `METAFORGE_SANDBOX_IMAGE` to reference an immutable SHA-256
+image digest and a rootless configured runtime. The report contains only test counts
+and status, not raw test output or failure text. Wall-time measurement includes
+container startup and supervisor/worker overhead; it is not pure test runtime.
+Unsupported frameworks are refused before sandbox startup. This execution profile
+does not claim complete isolation from kernel/runtime vulnerabilities.

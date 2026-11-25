@@ -60,7 +60,17 @@ elif args and args[0] == "run":
         source_path = mount_spec.split("source=", 1)[1].split(",target=", 1)[0]
         payload = json.loads((Path(source_path) / "input.json").read_text(encoding="utf-8"))
         repeats = int(args[-4])
-        print(json.dumps({{"output": sorted(payload["values"]), "samples_ns": [1000] * repeats}}))
+        if mode in ("project_success", "project_failure"):
+            test_file = Path(source_path) / "project" / "tests" / "test_basic.py"
+            if not test_file.is_file():
+                raise SystemExit(6)
+            Path(__file__ + ".project").write_text(test_file.read_text(encoding="utf-8"), encoding="utf-8")
+            result = {{"output": sorted(payload["values"]), "samples_ns": [1000] * repeats,
+                      "test_summary": {{"tests_run": 2, "failures": 0 if mode == "project_success" else 1, "errors": 0,
+                                       "skipped": 1, "successful": mode == "project_success"}}}}
+        else:
+            result = {{"output": sorted(payload["values"]), "samples_ns": [1000] * repeats}}
+        print(json.dumps(result))
 else:
     raise SystemExit(2)
 """
@@ -386,3 +396,135 @@ def test_candidate_stderr_is_bounded_before_supervisor_buffers_it(tmp_path):
 
     assert completed.returncode != 0
     assert len(completed.stdout.encode("utf-8")) < 4096
+
+
+def test_project_unittest_stages_snapshot_read_only_and_returns_bounded_summary(tmp_path):
+    from metaforge.projects import capture_project_snapshot
+
+    root = tmp_path / "project"
+    (root / "tests").mkdir(parents=True)
+    (root / "tests" / "test_basic.py").write_text(
+        "import unittest\nclass BasicTests(unittest.TestCase):\n"
+        "    def test_one(self): self.assertEqual(1, 1)\n",
+        encoding="utf-8",
+    )
+    snapshot = capture_project_snapshot(root)
+    runtime = _fake_runtime(tmp_path, "project_success")
+    runner = SandboxRunner(SandboxPolicy(image=IMAGE), str(runtime))
+
+    result = runner.run_project_unittest(snapshot)
+
+    assert result.supported is True
+    assert result.executed is True
+    assert result.success is True
+    assert result.tests_run == 2
+    assert result.failures == 0
+    assert result.skipped == 1
+    assert Path(str(runtime) + ".project").read_text(encoding="utf-8").startswith("import unittest")
+    args = Path(str(runtime) + ".args").read_text(encoding="utf-8")
+    assert "--network=none" in args
+    assert "--read-only" in args
+    assert ",target=/workspace,readonly" in args
+
+
+def test_project_unittest_refuses_pytest_or_ambiguous_frameworks_before_runtime(tmp_path):
+    from metaforge.projects import capture_project_snapshot
+
+    root = tmp_path / "project"
+    (root / "tests").mkdir(parents=True)
+    (root / "tests" / "test_basic.py").write_text(
+        "import pytest\ndef test_one(): assert True\n", encoding="utf-8"
+    )
+    runtime = _fake_runtime(tmp_path, "not_rootless")
+    runner = SandboxRunner(SandboxPolicy(image=IMAGE), str(runtime))
+
+    result = runner.run_project_unittest(capture_project_snapshot(root))
+
+    assert result.supported is False
+    assert "unittest" in result.error
+    assert not Path(str(runtime) + ".args").exists()
+
+
+def test_additional_project_files_reject_traversal_before_runtime(tmp_path):
+    runtime = _fake_runtime(tmp_path)
+    runner = SandboxRunner(SandboxPolicy(image=IMAGE), str(runtime))
+
+    result = runner.run_python(
+        "def solve(values): return values",
+        [],
+        additional_files={"../outside.py": b"pass"},
+    )
+
+    assert result.success is False
+    assert result.error == "Additional project path is invalid"
+    assert not Path(str(runtime) + ".args").exists()
+
+
+def test_sandbox_policy_bounds_project_workspace_size():
+    with pytest.raises(ValueError):
+        SandboxPolicy(image=IMAGE, max_project_files=0)
+    with pytest.raises(ValueError):
+        SandboxPolicy(image=IMAGE, max_project_bytes=512)
+    with pytest.raises(ValueError):
+        SandboxPolicy(image=IMAGE, max_project_files=True)
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="worker seccomp is Linux-specific")
+def test_trusted_worker_returns_unittest_summary_without_test_output(tmp_path):
+    import subprocess
+
+    from metaforge.sandbox.runner import _PROJECT_UNITTEST_SOURCE, _WORKER_SOURCE
+
+    workspace = tmp_path
+    project_tests = workspace / "project" / "tests"
+    project_tests.mkdir(parents=True)
+    (project_tests / "test_basic.py").write_text(
+        "import unittest\n"
+        "class BasicTests(unittest.TestCase):\n"
+        "    def test_pass(self): self.assertEqual(2, 2)\n"
+        "    def test_fail(self): self.assertEqual(1, 2)\n",
+        encoding="utf-8",
+    )
+    worker_path = workspace / "candidate_worker.py"
+    candidate_path = workspace / "candidate.py"
+    input_path = workspace / "input.json"
+    worker_path.write_text(_WORKER_SOURCE, encoding="utf-8")
+    candidate_path.write_text(_PROJECT_UNITTEST_SOURCE, encoding="utf-8")
+    input_path.write_text(json.dumps({"values": []}), encoding="utf-8")
+
+    completed = subprocess.run(
+        [sys.executable, "-I", str(worker_path), str(candidate_path), str(input_path)],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    assert payload["output"] == []
+    assert payload["test_summary"] == {
+        "tests_run": 2, "failures": 1, "errors": 0, "skipped": 0, "successful": False,
+    }
+    assert "AssertionError" not in completed.stdout
+
+def test_project_unittest_reports_test_failures_as_execution_not_success(tmp_path):
+    from metaforge.projects import capture_project_snapshot
+
+    root = tmp_path / "project"
+    (root / "tests").mkdir(parents=True)
+    (root / "tests" / "test_basic.py").write_text(
+        "import unittest\nclass BasicTests(unittest.TestCase):\n"
+        "    def test_one(self): self.assertEqual(1, 1)\n",
+        encoding="utf-8",
+    )
+    runtime = _fake_runtime(tmp_path, "project_failure")
+    result = SandboxRunner(SandboxPolicy(image=IMAGE), str(runtime)).run_project_unittest(
+        capture_project_snapshot(root)
+    )
+
+    assert result.supported is True
+    assert result.executed is True
+    assert result.success is False
+    assert result.tests_run == 2
+    assert result.failures == 1

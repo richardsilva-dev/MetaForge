@@ -135,6 +135,11 @@ def main() -> int:
     project_validation = project_sub.add_parser("validation-plan", help="discover test targets and produce a static validation plan without executing project code")
     project_validation.add_argument("root", type=Path)
     project_validation.add_argument("--output", type=Path, default=Path(".artifacts/project-validation-plan.json"))
+    project_validate_tests = project_sub.add_parser("validate-tests", help="execute only identified Python unittest suites in the rootless sandbox")
+    project_validate_tests.add_argument("root", type=Path)
+    project_validate_tests.add_argument("--execute-unittest", action="store_true", required=True)
+    project_validate_tests.add_argument("--timeout-seconds", type=float, default=30.0)
+    project_validate_tests.add_argument("--output", type=Path, default=Path(".artifacts/project-test-execution.json"))
 
     replay = sub.add_parser("replay", help="re-run an archived experiment using its stored dataset")
     replay.add_argument("--run", type=Path, required=True, help="path to a prior experiment JSON")
@@ -273,6 +278,76 @@ def main() -> int:
         print("Project code executed: False")
         print(f"Report: {args.output}")
         return 1 if report["risk_summary"]["secret_findings"] or report["risk_summary"]["secret_findings_truncated"] else 0
+
+
+
+    if args.command == "project" and args.project_command == "validate-tests":
+        try:
+            from metaforge.projects import analyze_project, build_validation_plan, capture_project_snapshot
+            from metaforge.sandbox.policy import SandboxPolicy
+            from metaforge.sandbox.runner import SandboxRunner
+            snapshot = capture_project_snapshot(args.root)
+            analysis = analyze_project(snapshot)
+            plan = build_validation_plan(snapshot, analysis)
+            image = os.environ.get("METAFORGE_SANDBOX_IMAGE", "")
+            runtime = os.environ.get("METAFORGE_SANDBOX_RUNTIME", "podman")
+            sandbox_policy = SandboxPolicy(
+                image=image,
+                runtime=runtime,
+                timeout_seconds=args.timeout_seconds,
+            )
+            execution = SandboxRunner(sandbox_policy).run_project_unittest(
+                snapshot,
+                timeout_seconds=args.timeout_seconds,
+            )
+            report = {
+                "schema_version": "1.0",
+                "snapshot_fingerprint": snapshot.fingerprint,
+                "test_targets": plan["test_targets"],
+                "execution_profile": "python_unittest_only",
+                "executed_test_targets": [item["path"] for item in plan["test_targets"]
+                                         if item["ecosystem"] == "python" and execution.executed is True],
+                "not_executed_test_targets": [item["path"] for item in plan["test_targets"]
+                                              if not (item["ecosystem"] == "python" and execution.executed is True)],
+                "sandbox_profile": {
+                    "runtime": sandbox_policy.runtime,
+                    "image": sandbox_policy.image,
+                    "rootless_required": True,
+                    "network_disabled": True,
+                    "workspace_read_only": True,
+                    "package_installation_performed": False,
+                },
+                "execution_result": {
+                    "supported": execution.supported,
+                    "executed": execution.executed,
+                    "success": execution.success,
+                    "tests_run": execution.tests_run,
+                    "failures": execution.failures,
+                    "errors": execution.errors,
+                    "skipped": execution.skipped,
+                    "wall_seconds": execution.wall_seconds,
+                    "measurement_scope": execution.measurement_scope,
+                    "error": execution.error,
+                },
+                "execution_scope": {
+                    "project_code_executed": execution.executed,
+                    "tests_executed": execution.executed,
+                    "builds_executed": False,
+                    "package_installation_performed": False,
+                    "network_accessed": False,
+                },
+            }
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        except Exception as exc:
+            parser.error(f"project test execution stopped safely: {type(exc).__name__}: {exc}")
+        print(f"Execution supported: {execution.supported}")
+        print(f"Tests executed: {execution.executed}")
+        print(f"Tests passed: {execution.success}")
+        print(f"Tests run: {execution.tests_run}")
+        print(f"Failures: {execution.failures}; errors: {execution.errors}; skipped: {execution.skipped}")
+        print(f"Report: {args.output}")
+        return 0 if execution.success else 1
 
 
     if args.command == "run":
