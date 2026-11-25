@@ -415,6 +415,7 @@ def test_project_unittest_stages_snapshot_read_only_and_returns_bounded_summary(
     result = runner.run_project_unittest(snapshot)
 
     assert result.supported is True
+    assert result.executed is True
     assert result.success is True
     assert result.tests_run == 2
     assert result.failures == 0
