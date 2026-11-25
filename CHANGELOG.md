@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Project snapshot and PatchSet foundation
+
+- Added a deterministic project snapshot manifest over allow-listed UTF-8 text source/documentation paths, including SHA-256 per file and a canonical manifest fingerprint.
+- Added strict versioned PatchSet contracts with create/replace/delete operations, per-file and total byte limits, duplicate/case-collision checks, Unicode/path normalization, Windows reserved-name checks, and traversal rejection.
+- Protected CI/hidden paths, dependency and build manifests, lockfiles, shell/batch scripts, and existing acceptance tests; new test files may be added without altering baseline tests.
+- Added no-follow file reading, symlink/special-file rejection, bounded snapshot sizes/counts, source re-snapshot checks, and per-file hash preconditions.
+- Added atomic application into a new disposable copy only; source checkout is never modified and this API does not execute builds or tests.
+- Added multilingual source file types for PatchSet representation; no generated native code compiler or model-driven project-refactoring workflow is wired yet.
+
 ### Benchmark robustness
 
 - Added a versioned deterministic integer-sort workload suite covering original, ascending, descending, nearly-sorted, duplicate-heavy, low-cardinality, organ-pipe, and all-equal distributions.

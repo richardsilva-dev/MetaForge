@@ -7,7 +7,7 @@ MetaForge currently provides two related experimental paths:
 - A deterministic, descriptor-based optimizer for integer sorting, including trusted Python, C11, and Rust implementations.
 - A separate source-level code-evolution pipeline that accepts AI-proposed Python implementations of a strict `solve(values)` contract, reviews them, executes them only in a verified rootless container, checks correctness against an independent oracle, and records lineage and measurements.
 
-> **Current scope:** source-level code evolution is currently limited to pure Python integer-sorting candidates. The C and Rust backends execute repository-owned implementations; they are not yet general-purpose compilers for AI-generated programs. MetaForge is not yet a repository-wide refactoring or architecture-rewriting agent. Those capabilities require a separate patch-based workflow with project-specific tests and explicit acceptance criteria.
+> **Current scope:** source-level code evolution is currently limited to pure Python integer-sorting candidates. The C and Rust backends execute repository-owned implementations; they are not yet general-purpose compilers for AI-generated programs. Project snapshots and structured patches are now available as a host-side foundation, but are not yet connected to agents, project builds, test execution, or automatic refactoring. MetaForge is not yet a repository-wide architecture-rewriting agent.
 
 ## Current capabilities
 
@@ -23,6 +23,8 @@ MetaForge currently provides two related experimental paths:
 - Dataset SHA-256, run identifier, UTC timestamps, environment metadata, configuration, and immutable JSON archives.
 - Deterministic candidate-sequence replay from archived synthetic CLI datasets.
 - A source-level Python code-evolution engine with structured model proposals, static AST review, rootless-container execution, an independent correctness oracle, mutation lineage, and replay without model calls.
+- A bounded project-snapshot and structured PatchSet foundation: SHA-256 manifests, strict relative-path policy, optimistic preconditions, immutable existing acceptance tests, and atomic patch application into a new disposable copy.
+- A multilingual text-source patch contract for Python, Rust, C/C++, Go, Java/Kotlin, C#, Swift, Scala, JavaScript/TypeScript, and additional source formats; this is not yet a model-driven project-refactoring runtime.
 - Versioned backend interfaces and trusted C11/Rust implementations for selected sorting strategies.
 
 ## Architecture
@@ -48,6 +50,46 @@ MetaForge currently provides two related experimental paths:
     Immutable JSON archive + Markdown report
 
 Agent output is untrusted input. Agents can propose or summarize; deterministic code decides whether a candidate passes safety and correctness gates. The source-level pipeline requires both static review and a successful sandbox preflight/smoke test before model calls or candidate execution. Static analysis is defense in depth, not a security boundary.
+
+Project patch contracts are separate from the current code-evolution engine. A snapshot includes only allow-listed UTF-8 text files under `src/`, `tests/`, `docs/`, and `backends/`, plus selected root documentation files. Hidden directories, environments, caches, build outputs, binary assets, and dependency/build manifests are not included. Shell/batch scripts and build manifests are protected. Existing files under `tests/` cannot be replaced or deleted; new tests can be added. Applying a PatchSet verifies the source snapshot and expected file hashes, then creates a new directory atomically without modifying the original checkout. No project code is executed by this API. Hardcoded secrets inside otherwise included source files are not detected yet; do not send project files to a model until a dedicated secret-scanning/redaction layer exists.
+
+
+## Project snapshots and PatchSets (foundation API)
+
+This is the first safe file-editing layer for future refactoring workflows. It is intentionally not exposed as an LLM command yet.
+
+\`\`\`python
+from metaforge.projects import (
+    ProjectPatch,
+    apply_patch_to_copy,
+    capture_project_snapshot,
+)
+
+snapshot = capture_project_snapshot("path/to/project")
+original = snapshot.file_map["src/module.py"]
+
+patch = ProjectPatch.from_dict({
+    "schema_version": "1.0",
+    "rationale": "Refactor one bounded function without changing its contract",
+    "changes": [{
+        "path": "src/module.py",
+        "action": "replace",
+        "expected_sha256": original.sha256,
+        "content": "def solve():\n    return 42\n",
+    }],
+})
+
+patched_snapshot = apply_patch_to_copy(
+    snapshot,
+    patch,
+    "path/to/new-disposable-project-copy",
+)
+print(patched_snapshot.fingerprint)
+\`\`\`
+
+The destination must not exist and must not overlap the source project. Patch operations support \`create\`, \`replace\`, and \`delete\`; replacements and deletions require the exact SHA-256 from the captured snapshot. Paths are normalized relative POSIX paths and restricted to source/documentation roots and allow-listed text extensions. The default limits are 30 files per patch, 256 KiB per file, 1 MiB total patch content, 1,000 snapshot files, and 20 MiB snapshot content.
+
+**Not implemented yet:** sending project content to an agent, secret scanning/redaction for model context, immutable project-test execution, no-network build orchestration, multi-language compiler execution of generated patches, dependency-graph analysis, and architecture-level acceptance. The project patch API only produces and verifies a disposable text-source copy; binary assets are excluded, and it does not claim that the copy builds or passes tests.
 
 ## Requirements and installation
 
@@ -132,6 +174,7 @@ The planned language-neutral and project-refactoring architecture is specified i
 
 - **V0.1–V0.6:** controlled optimizer, agent contracts, provenance/replay, compiled trusted backends, and rootless sandbox.
 - **V0.7:** source-level Python code generation, static review, sandboxed correctness/performance evaluation, lineage, and replay.
-- **V0.8:** adversarial AST-policy hardening, expanded security regressions, statistically stronger benchmark protocols, and experiment-budget/selection improvements.
+- **V0.8:** adversarial AST-policy hardening, expanded security regressions, and multi-workload benchmark selection.
 - **V0.9:** language-neutral candidate contracts and compiler-backed generated-source evaluation for explicitly supported toolchains.
-- **V1.0:** patch-based multi-file refactoring and architecture optimization with isolated worktrees, project-specific test plans, dependency/build controls, and evidence-based acceptance gates.
+- **V0.10 foundation:** bounded project snapshots and hash-preconditioned PatchSets applied only to new disposable copies. Agent integration and isolated project build/test orchestration are still pending.
+- **V1.0:** multi-file refactoring and architecture optimization with isolated worktrees, project-specific test plans, dependency/build controls, secret scanning, and evidence-based acceptance gates.
