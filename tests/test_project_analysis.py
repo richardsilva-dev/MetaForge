@@ -53,7 +53,7 @@ def test_unresolved_relative_import_is_not_reported_as_local(tmp_path):
     (root / "src" / "sample" / "service.py").write_text("from .missing import Thing\n", encoding="utf-8")
     report = analyze_project(capture_project_snapshot(root)).to_dict()
     edge = next(x for x in report["imports"] if x["target"] == "sample.missing")
-    assert edge["resolution"] == "external_or_unresolved"
+    assert edge["resolution"] == "relative_unresolved"
 
 
 def test_dependency_graph_detects_cycles_isolated_modules_and_entry_points(tmp_path):
@@ -176,3 +176,28 @@ def test_manifest_parser_recursion_error_is_reported(tmp_path, monkeypatch):
     report = analyze_project(capture_project_snapshot(root)).to_dict()
 
     assert any(item["code"] == "dependency-manifest-parse-error" for item in report["diagnostics"])
+
+
+def test_external_imports_are_compared_to_declared_python_dependencies(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    _project(root)
+    (root / "pyproject.toml").write_text(
+        '[project]\nname = "sample"\ndependencies = ["requests>=2.31"]\n',
+        encoding="utf-8",
+    )
+    (root / "src" / "sample" / "external.py").write_text(
+        "import requests\nimport PIL.Image\nimport json\n",
+        encoding="utf-8",
+    )
+
+    report = analyze_project(capture_project_snapshot(root)).to_dict()
+    usage = {item["import_name"]: item for item in report["external_dependency_usage"]}
+    imports = {(item["target"], item["resolution"]) for item in report["imports"]}
+
+    assert usage["requests"]["status"] == "exact_name_match"
+    assert usage["requests"]["matched_declaration"] == "requests"
+    assert usage["PIL"]["status"] == "no_exact_name_match"
+    assert usage["PIL"]["confidence"] == "unresolved_mapping"
+    assert ("json", "stdlib") in imports
+    assert report["schema_version"] == "1.1"
