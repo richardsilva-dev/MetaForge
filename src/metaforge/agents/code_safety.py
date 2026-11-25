@@ -13,6 +13,9 @@ _FORBIDDEN_CALLS = frozenset({
     "eval", "exec", "compile", "__import__", "input", "print", "open", "breakpoint", "help",
     "globals", "locals", "vars", "getattr", "setattr", "delattr", "dir",
 })
+# These operator helpers turn strings into attribute/method access. They can
+# otherwise bypass the direct ast.Attribute dunder-name checks below.
+_FORBIDDEN_OPERATOR_REFLECTION = frozenset({"attrgetter", "methodcaller"})
 _FORBIDDEN_ATTRIBUTES = frozenset({
     "modules", "path", "meta_path", "path_hooks", "settrace", "setprofile",
     "_getframe", "exit", "environ", "system", "popen", "spawn",
@@ -20,6 +23,8 @@ _FORBIDDEN_ATTRIBUTES = frozenset({
 _FORBIDDEN_NAMES = frozenset({
     "__builtins__", "__loader__", "__spec__", "__file__", "__cached__", "__package__",
 })
+_MAX_AST_NODES = 20_000
+_MAX_FINDINGS = 100
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +62,13 @@ class StaticCodeReviewer:
     def review(self, source_code: str) -> CodeReviewResult:
         findings: list[str] = []
         imports: set[str] = set()
+
+        def add_finding(message: str) -> None:
+            if len(findings) < _MAX_FINDINGS:
+                findings.append(message)
+            elif len(findings) == _MAX_FINDINGS:
+                findings.append("Additional findings omitted by the reviewer limit")
+
         if not isinstance(source_code, str):
             return CodeReviewResult(False, "", (), ("Source must be text",))
         try:
@@ -68,42 +80,52 @@ class StaticCodeReviewer:
             return CodeReviewResult(False, digest, (), ("Source size limit exceeded",))
         try:
             tree = ast.parse(source_code, mode="exec")
-        except SyntaxError as exc:
-            return CodeReviewResult(False, digest, (), (f"Syntax error on line {exc.lineno}",))
+        except (SyntaxError, ValueError, RecursionError, MemoryError) as exc:
+            line = getattr(exc, "lineno", None)
+            detail = f" on line {line}" if isinstance(line, int) else ""
+            return CodeReviewResult(
+                False, digest, (), (f"Source could not be parsed safely{detail}",)
+            )
 
-        for statement in tree.body:
-            if isinstance(statement, (ast.Import, ast.ImportFrom, ast.FunctionDef)):
-                pass
-            elif isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Constant) and isinstance(statement.value.value, str):
-                if statement is not tree.body[0]:
-                    findings.append("Only the module docstring is allowed as a top-level expression")
-            elif isinstance(statement, ast.Assign):
-                if not all(isinstance(target, ast.Name) for target in statement.targets) or not self._is_literal(
-                    statement.value
-                ):
-                    findings.append("Top-level assignments must use simple literal constants")
-            else:
-                findings.append(f"Top-level statement not allowed: {type(statement).__name__}")
+        # Materialize once so the size is bounded before any policy traversal.
+        try:
+            nodes = tuple(ast.walk(tree))
+        except (RecursionError, MemoryError):
+            return CodeReviewResult(
+                False, digest, (), ("AST traversal exceeded complexity limits",)
+            )
+        if len(nodes) > _MAX_AST_NODES:
+            return CodeReviewResult(
+                False, digest, (), (f"AST node limit exceeded ({_MAX_AST_NODES})",)
+            )
 
-        for node in ast.walk(tree):
+        operator_module_names = {"operator"}
+        for node in nodes:
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     root = alias.name.split(".", 1)[0]
                     imports.add(root)
                     if root not in _ALLOWED_IMPORTS:
-                        findings.append(f"Import not allowed: {root}")
+                        add_finding(f"Import not allowed: {root}")
                     if alias.asname and alias.asname.startswith("_"):
-                        findings.append("Private import aliases are not allowed")
+                        add_finding("Private import aliases are not allowed")
+                    if root == "operator":
+                        operator_module_names.add(alias.asname or root)
             elif isinstance(node, ast.ImportFrom):
                 root = (node.module or "").split(".", 1)[0]
                 if node.level or not root:
-                    findings.append("Relative imports are not allowed")
+                    add_finding("Relative imports are not allowed")
                 imports.add(root)
                 if root not in _ALLOWED_IMPORTS:
-                    findings.append(f"Import not allowed: {root}")
+                    add_finding(f"Import not allowed: {root}")
                 for alias in node.names:
+                    if alias.name == "*":
+                        add_finding("Wildcard imports are not allowed")
+                        continue
                     if alias.name.startswith("_") or (alias.asname and alias.asname.startswith("_")):
-                        findings.append("Private imports are not allowed")
+                        add_finding("Private imports are not allowed")
+                    if root == "operator" and alias.name in _FORBIDDEN_OPERATOR_REFLECTION:
+                        add_finding(f"Reflection helper import not allowed: operator.{alias.name}")
             elif isinstance(node, ast.FunctionDef):
                 if (
                     node.decorator_list or node.args.defaults
@@ -115,25 +137,31 @@ class StaticCodeReviewer:
                     or (node.args.vararg and node.args.vararg.annotation is not None)
                     or (node.args.kwarg and node.args.kwarg.annotation is not None)
                 ):
-                    findings.append("Functions cannot use decorators, defaults, or annotations")
+                    add_finding("Functions cannot use decorators, defaults, or annotations")
             elif isinstance(node, ast.ClassDef):
-                findings.append("Class definitions are not allowed")
+                add_finding("Class definitions are not allowed")
             elif isinstance(node, ast.AsyncFunctionDef):
-                findings.append("Async functions are not allowed")
+                add_finding("Async functions are not allowed")
             elif isinstance(node, ast.Name):
                 if node.id in _FORBIDDEN_NAMES:
-                    findings.append(f"Restricted runtime name: {node.id}")
+                    add_finding(f"Restricted runtime name: {node.id}")
             elif isinstance(node, ast.Attribute):
                 if node.attr.startswith("__") or node.attr in _FORBIDDEN_ATTRIBUTES:
-                    findings.append(f"Restricted attribute: {node.attr}")
+                    add_finding(f"Restricted attribute: {node.attr}")
+                if (
+                    node.attr in _FORBIDDEN_OPERATOR_REFLECTION
+                    and isinstance(node.value, ast.Name)
+                    and node.value.id in operator_module_names
+                ):
+                    add_finding(f"Reflection helper call is not allowed: operator.{node.attr}")
             elif isinstance(node, ast.Call):
                 if isinstance(node.func, ast.Name) and node.func.id in _FORBIDDEN_CALLS:
-                    findings.append(f"Restricted call: {node.func.id}")
+                    add_finding(f"Restricted call: {node.func.id}")
                 elif isinstance(node.func, ast.Attribute):
                     if node.func.attr in {"write_text", "write_bytes", "unlink", "chmod", "mkdir"}:
-                        findings.append(f"Filesystem mutation call: {node.func.attr}")
+                        add_finding(f"Filesystem mutation call: {node.func.attr}")
             elif isinstance(node, (ast.Global, ast.Nonlocal)):
-                findings.append("Global and nonlocal declarations are not allowed")
+                add_finding("Global and nonlocal declarations are not allowed")
 
         unique_findings = tuple(dict.fromkeys(findings))
         return CodeReviewResult(not unique_findings, digest, tuple(sorted(imports)), unique_findings)
