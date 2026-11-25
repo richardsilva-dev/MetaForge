@@ -142,3 +142,32 @@ def test_contract_comparison_requires_explicit_boolean_policy():
         assert "boolean" in str(exc)
     else:
         raise AssertionError("Non-boolean policy values must be rejected")
+
+
+def test_project_review_cli_writes_machine_readable_report(tmp_path, monkeypatch):
+    import json
+    import sys
+    from metaforge.cli import main
+
+    root = tmp_path / "project"
+    root.mkdir()
+    _project(root)
+    snapshot = capture_project_snapshot(root)
+    patch = _patch({
+        "path": "docs/design.md",
+        "action": "replace",
+        "expected_sha256": snapshot.file_map["docs/design.md"].sha256,
+        "content": "# Reviewed design\n",
+    })
+    patch_path = tmp_path / "patch.json"
+    patch_path.write_text(json.dumps(patch.to_dict()), encoding="utf-8")
+    output = tmp_path / "review.json"
+    monkeypatch.setattr(sys, "argv", [
+        "metaforge", "project", "review", str(root), str(patch_path),
+        "--output", str(output),
+    ])
+
+    assert main() == 0
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert report["accepted"] is True
+    assert report["execution_scope"]["project_code_executed"] is False
