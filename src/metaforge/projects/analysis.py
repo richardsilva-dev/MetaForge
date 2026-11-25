@@ -241,7 +241,7 @@ def _parse_python(path: str, raw: bytes, known: set[str]):
             continue
         target = _literal_string(node.args[0]) if node.args else None
         if (target is None or len(target) > 512
-                or re.fullmatch(r"\\.*[A-Za-z_]\\w*(?:\\.[A-Za-z_]\\w*)*", target) is None):
+                or re.fullmatch(r"\.*[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", target) is None):
             diagnostics.append({"path": path, "code": "python-dynamic-import-unresolved",
                                 "severity": "warning", "line": node.lineno})
             continue
