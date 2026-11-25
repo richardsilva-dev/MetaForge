@@ -60,14 +60,14 @@ elif args and args[0] == "run":
         source_path = mount_spec.split("source=", 1)[1].split(",target=", 1)[0]
         payload = json.loads((Path(source_path) / "input.json").read_text(encoding="utf-8"))
         repeats = int(args[-4])
-        if mode == "project_success":
+        if mode in ("project_success", "project_failure"):
             test_file = Path(source_path) / "project" / "tests" / "test_basic.py"
             if not test_file.is_file():
                 raise SystemExit(6)
             Path(__file__ + ".project").write_text(test_file.read_text(encoding="utf-8"), encoding="utf-8")
             result = {{"output": sorted(payload["values"]), "samples_ns": [1000] * repeats,
-                      "test_summary": {{"tests_run": 2, "failures": 0, "errors": 0,
-                                       "skipped": 1, "successful": True}}}}
+                      "test_summary": {{"tests_run": 2, "failures": 0 if mode == "project_success" else 1, "errors": 0,
+                                       "skipped": 1, "successful": mode == "project_success"}}}}
         else:
             result = {{"output": sorted(payload["values"]), "samples_ns": [1000] * repeats}}
         print(json.dumps(result))
@@ -510,3 +510,25 @@ def test_trusted_worker_and_supervisor_return_unittest_summary_without_test_outp
         "tests_run": 2, "failures": 1, "errors": 0, "skipped": 0, "successful": False,
     }
     assert "AssertionError" not in completed.stdout
+
+
+def test_project_unittest_reports_test_failures_as_execution_not_success(tmp_path):
+    from metaforge.projects import capture_project_snapshot
+
+    root = tmp_path / "project"
+    (root / "tests").mkdir(parents=True)
+    (root / "tests" / "test_basic.py").write_text(
+        "import unittest\nclass BasicTests(unittest.TestCase):\n"
+        "    def test_one(self): self.assertEqual(1, 1)\n",
+        encoding="utf-8",
+    )
+    runtime = _fake_runtime(tmp_path, "project_failure")
+    result = SandboxRunner(SandboxPolicy(image=IMAGE), str(runtime)).run_project_unittest(
+        capture_project_snapshot(root)
+    )
+
+    assert result.supported is True
+    assert result.executed is True
+    assert result.success is False
+    assert result.tests_run == 2
+    assert result.failures == 1
