@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import shutil
 import subprocess
@@ -102,7 +102,7 @@ response = {"output": result}
 summary = namespace.get("__metaforge_test_summary__")
 if summary is not None:
     expected_keys = {"tests_run", "failures", "errors", "skipped", "successful"}
-    if _trusted_type(summary) is not dict or set(summary) != expected_keys:
+    if _trusted_type(summary) is not _trusted_dict_type or _trusted_set_type(summary) != expected_keys:
         fail(46)
     for key in ("tests_run", "failures", "errors", "skipped"):
         if _trusted_type(summary[key]) is not _trusted_int_type or summary[key] < 0:
@@ -118,6 +118,42 @@ if summary is not None:
     }
 _trusted_stdout_write(_trusted_json_dumps(response, separators=(",", ":")) + "\n")
 
+"""
+
+
+_PROJECT_UNITTEST_SOURCE = r"""
+import contextlib, io, os, sys, unittest
+
+project_root = "/workspace/project"
+tests_root = os.path.join(project_root, "tests")
+source_root = os.path.join(project_root, "src")
+sys.path.insert(0, project_root)
+if os.path.isdir(source_root):
+    sys.path.insert(0, source_root)
+os.chdir(project_root)
+
+summary = {"tests_run": 0, "failures": 0, "errors": 0, "skipped": 0, "successful": False}
+if os.path.isdir(tests_root):
+    top_level = project_root if os.path.isfile(os.path.join(tests_root, "__init__.py")) else tests_root
+    try:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            loader = unittest.TestLoader()
+            suite = loader.discover(start_dir=tests_root, top_level_dir=top_level)
+            result = unittest.TextTestRunner(stream=io.StringIO(), verbosity=0).run(suite)
+        summary = {
+            "tests_run": int(result.testsRun),
+            "failures": len(result.failures),
+            "errors": len(result.errors),
+            "skipped": len(result.skipped),
+            "successful": bool(result.wasSuccessful() and result.testsRun > 0),
+        }
+    except Exception:
+        summary = {"tests_run": 0, "failures": 0, "errors": 1, "skipped": 0, "successful": False}
+
+__metaforge_test_summary__ = summary
+
+def solve(values):
+    return []
 """
 
 _RUNNER_SOURCE = r"""
@@ -352,6 +388,19 @@ class SandboxPreparation:
 
 
 @dataclass(frozen=True, slots=True)
+class ProjectTestExecutionResult:
+    supported: bool
+    success: bool
+    tests_run: int
+    failures: int
+    errors: int
+    skipped: int
+    wall_seconds: float
+    measurement_scope: str
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class SandboxResult:
     success: bool
     output: list[int] | None
@@ -359,6 +408,7 @@ class SandboxResult:
     measurement_scope: str
     error: str | None = None
     algorithm_samples_seconds: tuple[float, ...] = ()
+    test_summary: dict[str, int | bool] | None = None
 
 
 class SandboxRunner:
@@ -495,6 +545,7 @@ class SandboxRunner:
         timeout_seconds: float | None = None,
         repeats: int = 1,
         smoke_probe: bool = False,
+        additional_files: dict[str, bytes] | None = None,
     ) -> SandboxResult:
         started = time.perf_counter()
         scope = "rootless_container_external_candidate_process_wall_time_including_startup"
@@ -522,6 +573,27 @@ class SandboxRunner:
         if type(smoke_probe) is not bool:
             return SandboxResult(False, None, time.perf_counter() - started, scope,
                                  "smoke_probe must be boolean")
+        if additional_files is not None:
+            if not isinstance(additional_files, dict) or len(additional_files) > self.policy.max_project_files:
+                return SandboxResult(False, None, time.perf_counter() - started, scope,
+                                     "Additional project file count limit exceeded")
+            total_project_bytes = 0
+            reserved = {"candidate.py", "input.json", "runner.py", "candidate_worker.py"}
+            for relative_path, content in additional_files.items():
+                if (not isinstance(relative_path, str) or not relative_path or not isinstance(content, bytes)
+                        or "\\" in relative_path or ":" in relative_path
+                        or any(ord(char) < 32 for char in relative_path)
+                        or any(part in {"", ".", ".."} for part in relative_path.split("/"))):
+                    return SandboxResult(False, None, time.perf_counter() - started, scope,
+                                         "Additional project path is invalid")
+                relative = PurePosixPath(relative_path)
+                if relative.is_absolute() or relative.parts[0] in reserved:
+                    return SandboxResult(False, None, time.perf_counter() - started, scope,
+                                         "Additional project path is reserved or absolute")
+                total_project_bytes += len(content)
+                if total_project_bytes > self.policy.max_project_bytes:
+                    return SandboxResult(False, None, time.perf_counter() - started, scope,
+                                         "Additional project byte limit exceeded")
         local_timeout = self.policy.timeout_seconds if timeout_seconds is None else min(
             self.policy.timeout_seconds, timeout_seconds
         )
@@ -541,6 +613,17 @@ class SandboxRunner:
             if "," in str(workspace):
                 return SandboxResult(False, None, time.perf_counter() - started, scope,
                                      "Workspace path contains an unsupported mount delimiter")
+            if additional_files:
+                project_root = workspace / "project"
+                try:
+                    for relative_path, content in additional_files.items():
+                        destination = project_root.joinpath(*PurePosixPath(relative_path).parts)
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        with destination.open("xb") as handle:
+                            handle.write(content)
+                except OSError as exc:
+                    return SandboxResult(False, None, time.perf_counter() - started, scope,
+                                         f"Additional project staging failed: {type(exc).__name__}")
             source_path = workspace / "candidate.py"
             source_path.write_bytes(source_bytes)
             input_path = workspace / "input.json"
@@ -643,10 +726,20 @@ class SandboxRunner:
                 parsed = json.loads(stdout.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError):
                 return SandboxResult(False, None, elapsed, scope, "Sandbox returned invalid JSON")
-            if not isinstance(parsed, dict) or set(parsed) != {"output", "samples_ns"}:
+            if not isinstance(parsed, dict) or set(parsed) not in (
+                {"output", "samples_ns"}, {"output", "samples_ns", "test_summary"}
+            ):
                 return SandboxResult(False, None, elapsed, scope, "Sandbox output schema is invalid")
             output = parsed["output"]
             samples_ns = parsed["samples_ns"]
+            test_summary = parsed.get("test_summary")
+            if test_summary is not None:
+                expected_summary_keys = {"tests_run", "failures", "errors", "skipped", "successful"}
+                if (not isinstance(test_summary, dict) or set(test_summary) != expected_summary_keys
+                        or any(type(test_summary[key]) is not int or test_summary[key] < 0
+                               for key in ("tests_run", "failures", "errors", "skipped"))
+                        or type(test_summary["successful"]) is not bool):
+                    return SandboxResult(False, None, elapsed, scope, "Sandbox test summary is invalid")
             if not isinstance(output, list) or any(type(value) is not int for value in output):
                 return SandboxResult(False, None, elapsed, scope, "Sandbox output values are invalid")
             if not isinstance(samples_ns, list) or len(samples_ns) != repeats or any(
@@ -656,4 +749,4 @@ class SandboxRunner:
             if output != sorted(values):
                 return SandboxResult(False, None, elapsed, scope, "Independent correctness check failed")
             samples = tuple(value / 1_000_000_000 for value in samples_ns)
-            return SandboxResult(True, output, elapsed, scope, None, samples)
+            return SandboxResult(True, output, elapsed, scope, None, samples, test_summary)
