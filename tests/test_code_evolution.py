@@ -99,6 +99,28 @@ def test_code_evolution_runs_reviewed_candidates_only_and_tracks_lineage():
             assert len(evaluation["algorithm_samples_seconds"]) == 2 * len(INTEGER_SORT_WORKLOAD_NAMES)
 
 
+
+def test_candidate_is_promoted_only_when_it_beats_baseline_by_required_margin():
+    class FasterCandidateRunner(FakeSandboxRunner):
+        def run_python(self, source_code, values, timeout_seconds=None, repeats=1, smoke_probe=False):
+            self.run_calls.append((source_code, list(values), timeout_seconds, repeats, smoke_probe))
+            sample = 0.0005 if source_code == SOURCE_B else 0.002
+            return SandboxResult(True, sorted(values), 0.03, "fake_internal", None, tuple(sample for _ in range(repeats)))
+
+    designer = FakeDesigner([SOURCE_B])
+    sandbox = FasterCandidateRunner()
+    engine = CodeEvolutionEngine(
+        designer, sandbox, population_size=1, generations=1, repeats=3,
+        max_agent_calls=1, global_timeout_seconds=60,
+    )
+    result = engine.run([5, 1, 4, 2, 3])
+
+    assert result["selection"]["selected_source"] == "candidate"
+    assert result["selection"]["candidate_promoted"] is True
+    assert result["selection"]["improvement_ratio"] == pytest.approx(0.75)
+    assert result["best_candidate"]["candidate"]["fingerprint"] != result["baseline"]["candidate"]["fingerprint"]
+
+
 def test_one_incorrect_workload_rejects_candidate_and_stops_its_measurement():
     class IncorrectWorkloadRunner(FakeSandboxRunner):
         def run_python(self, source_code, values, timeout_seconds=None, repeats=1, smoke_probe=False):
