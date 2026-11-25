@@ -55,6 +55,7 @@ def render_code_replay_report(result: dict[str, Any]) -> str:
             f"- Policy: {selection.get('policy', 'n/a')}",
             f"- Selected source: {selection.get('selected_source', 'n/a')}",
             f"- Candidate promoted: {selection.get('candidate_promoted', False)}",
+            f"- Verification stage: {selection.get('verification_stage', 'legacy / unspecified')}",
             f"- Minimum improvement: {selection.get('minimum_improvement_ratio', 'n/a')}",
             f"- Minimum repeats for promotion: {selection.get('minimum_repeats_for_promotion', 'n/a')}",
             f"- Baseline median: {selection.get('baseline_median_seconds', 'n/a')} s",
