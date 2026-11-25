@@ -46,6 +46,20 @@ class SecretScanReport:
     findings: tuple[SecretFinding, ...]
     findings_truncated: bool = False
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.snapshot_fingerprint, str) or not re.fullmatch(
+            r"[0-9a-f]{64}", self.snapshot_fingerprint
+        ):
+            raise ProjectContractError("Secret scan snapshot fingerprint must be SHA-256")
+        if type(self.files_scanned) is not int or self.files_scanned < 0:
+            raise ProjectContractError("Secret scan file count must be a non-negative integer")
+        if not isinstance(self.findings, tuple) or any(
+            not isinstance(item, SecretFinding) for item in self.findings
+        ):
+            raise ProjectContractError("Secret scan findings must be a tuple of SecretFinding records")
+        if type(self.findings_truncated) is not bool:
+            raise ProjectContractError("Secret scan truncated flag must be boolean")
+
     @property
     def no_detected_secrets(self) -> bool:
         return not self.findings and not self.findings_truncated
@@ -114,7 +128,7 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str], str], ...] = (
     (
         "credential-assignment",
         re.compile(
-            r"""(?ix)\b(?:api[_-]?key|client[_-]?secret|secret[_-]?key|"""
+            r"""(?ix)\b(?:api[_-]?key|client[_-]?secret|secret|secret[_-]?key|"""
             r"""access[_-]?token|auth[_-]?token|password|passwd|private[_-]?key)"""
             r"""\b\s*[:=]\s*["']?([^\s"']{8,})"""
         ),
