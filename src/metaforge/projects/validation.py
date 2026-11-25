@@ -157,7 +157,7 @@ def build_validation_plan(
     targets.sort(key=lambda item: (item.ecosystem, item.path.casefold()))
     secret_report = scan_project_secrets(snapshot, secret_scan_policy)
     cycles = analysis.dependency_graph.get("cycles", [])
-    unresolved_imports = [
+    external_or_unresolved_imports = [
         item.to_dict() for item in analysis.imports
         if item.resolution in {"external_or_unresolved", "relative_unresolved"}
     ]
@@ -165,7 +165,7 @@ def build_validation_plan(
         {"name": "static_architecture", "status": "completed"},
         {"name": "public_api_contracts", "status": "available"},
         {"name": "entrypoint_resolution", "status": "available"},
-        {"name": "secret_scan", "status": "findings" if secret_report.findings else "no_detected_findings"},
+        {"name": "secret_scan", "status": "findings" if secret_report.findings else ("no_detected_findings" if secret_report.no_detected_secrets else "inconclusive")},
         {"name": "test_execution", "status": "not_executed", "reason": "Toolchain-specific sandbox execution is a separate validation stage"},
         {"name": "runtime_security", "status": "not_executed", "reason": "No project runtime or build command was invoked"},
         {"name": "performance", "status": "not_executed", "reason": "No benchmark contract or performance workload was executed"},
@@ -178,13 +178,13 @@ def build_validation_plan(
         "risk_summary": {
             "test_targets": len(targets),
             "dependency_cycles": len(cycles),
-            "unresolved_imports": len(unresolved_imports),
+            "external_or_unresolved_imports": len(external_or_unresolved_imports),
             "secret_findings": len(secret_report.findings),
             "secret_findings_truncated": secret_report.findings_truncated,
             "analysis_diagnostics": len(analysis.diagnostics),
         },
         "dependency_cycles": cycles,
-        "unresolved_imports": unresolved_imports,
+        "external_or_unresolved_imports": external_or_unresolved_imports,
         "secret_scan": secret_report.to_dict(),
         "execution_scope": {
             "project_code_executed": False,
