@@ -116,7 +116,7 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str], str], ...] = (
         re.compile(
             r"""(?ix)\b(?:api[_-]?key|client[_-]?secret|secret[_-]?key|"""
             r"""access[_-]?token|auth[_-]?token|password|passwd|private[_-]?key)"""
-            r"""\b\s*[:=]\s*["']?([^\s"'\\x60,;]{8,})"""
+            r"""\b\s*[:=]\s*["']?([^\s"']{8,})"""
         ),
         "medium",
     ),
