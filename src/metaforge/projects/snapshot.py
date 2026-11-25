@@ -178,6 +178,8 @@ def capture_project_snapshot(
     encountered inside included roots fail closed.
     """
     policy = policy or ProjectPolicy()
+    if not isinstance(policy, ProjectPolicy):
+        raise ProjectContractError("A ProjectPolicy is required")
     supplied_root = Path(root).expanduser()
     try:
         root_stat = supplied_root.lstat()
@@ -190,7 +192,7 @@ def capture_project_snapshot(
     entries: list[SnapshotFile] = []
     total_bytes = 0
 
-    def add_file(path: Path, relative: str) -> None:
+    def add_file(relative: str) -> None:
         nonlocal total_bytes
         raw = _read_relative_regular_file(project_root, relative, policy.max_file_bytes)
         try:
@@ -212,7 +214,7 @@ def capture_project_snapshot(
         candidate = project_root / root_file
         if not candidate.exists() and not candidate.is_symlink():
             continue
-        add_file(candidate, root_file)
+        add_file(root_file)
 
     for directory_name in sorted(_ALLOWED_DIRECTORY_ROOTS):
         start = project_root / directory_name
@@ -254,7 +256,7 @@ def capture_project_snapshot(
 
                 relative = child_path.relative_to(project_root).as_posix()
                 if _is_text_candidate(relative):
-                    add_file(child_path, relative)
+                    add_file(relative)
             # Stack order is reversed to preserve ascending traversal.
             stack.extend(reversed(subdirectories))
 
