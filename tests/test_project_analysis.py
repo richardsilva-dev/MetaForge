@@ -54,3 +54,24 @@ def test_unresolved_relative_import_is_not_reported_as_local(tmp_path):
     report = analyze_project(capture_project_snapshot(root)).to_dict()
     edge = next(x for x in report["imports"] if x["target"] == "sample.missing")
     assert edge["resolution"] == "external_or_unresolved"
+
+
+def test_dependency_graph_detects_cycles_isolated_modules_and_entry_points(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    _project(root)
+    package = root / "src" / "sample"
+    (package / "alpha.py").write_text("from .beta import value\\n", encoding="utf-8")
+    (package / "beta.py").write_text("from .alpha import value\\n", encoding="utf-8")
+    (package / "lonely.py").write_text("VALUE = 1\\n", encoding="utf-8")
+    (package / "runner.py").write_text('if __name__ == "__main__":\\n    pass\\n', encoding="utf-8")
+    (package / "__main__.py").write_text("from .service import calculate\\n", encoding="utf-8")
+
+    graph = analyze_project(capture_project_snapshot(root)).to_dict()["dependency_graph"]
+
+    assert ["sample.alpha", "sample.beta"] in graph["cycles"]
+    assert "sample.lonely" in graph["isolated_modules"]
+    assert {"path": "src/sample/runner.py", "module": "sample.runner", "kind": "main_guard"} in graph["entry_points"]
+    assert {"path": "src/sample/__main__.py", "module": "sample", "kind": "python_module"} in graph["entry_points"]
+    assert graph["metrics"]["cycle_count"] == 1
+    assert graph["metrics"]["module_count"] == len(graph["nodes"])
