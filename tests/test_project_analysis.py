@@ -203,7 +203,7 @@ def test_external_imports_are_compared_to_declared_python_dependencies(tmp_path)
     assert usage["PIL"]["status"] == "no_exact_name_match"
     assert usage["PIL"]["confidence"] == "unresolved_mapping"
     assert ("json", "stdlib") in imports
-    assert report["schema_version"] == "1.3"
+    assert report["schema_version"] == "1.4"
 
 
 def test_static_module_contract_uses_literal_all_and_public_signatures(tmp_path):
@@ -236,7 +236,7 @@ def test_static_module_contract_uses_literal_all_and_public_signatures(tmp_path)
     assert {"PublicAPI", "PublicAPI.__init__", "PublicAPI.execute", "run"} <= symbol_names
     assert "PublicAPI._internal" not in symbol_names
     assert "_private" not in symbol_names
-    assert report["schema_version"] == "1.3"
+    assert report["schema_version"] == "1.4"
 
 
 def test_dynamic_all_uses_conservative_fallback_and_diagnostic(tmp_path):
@@ -284,7 +284,7 @@ def test_manifest_declared_python_entrypoints_resolve_modules_and_symbols(tmp_pa
     assert entries["package-cli"]["resolved_path"] == "src/sample/__init__.py"
     assert any(item["kind"] == "declared_console_script" and item["path"] == "src/sample/cli.py"
                for item in report["dependency_graph"]["entry_points"])
-    assert report["schema_version"] == "1.3"
+    assert report["schema_version"] == "1.4"
 
 
 def test_non_python_declared_binary_entrypoints_are_reported_without_execution(tmp_path):
@@ -302,4 +302,37 @@ def test_non_python_declared_binary_entrypoints_are_reported_without_execution(t
     assert entry["ecosystem"] == "rust"
     assert entry["kind"] == "cargo_bin"
     assert entry["resolution"] == "not_analyzed"
+    assert report["analysis_scope"]["executed_project_code"] is False
+
+
+def test_literal_dynamic_imports_are_classified_without_execution(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    _project(root)
+    marker = root / "should-not-exist"
+    source = (
+        "import importlib as il\n"
+        "from importlib import import_module as load\n"
+        "def run(name):\n"
+        "    il.import_module('sample.service')\n"
+        "    load('requests')\n"
+        "    __import__('json')\n"
+        "    il.import_module('.models', 'sample')\n"
+        "    il.import_module(name)\n"
+        "    il.import_module('https://user:secret@example.invalid')\n"
+        f"    il.import_module('os').system('touch {marker}')\n"
+    )
+    (root / "src" / "sample" / "dynamic.py").write_text(source, encoding="utf-8")
+
+    report = analyze_project(capture_project_snapshot(root)).to_dict()
+    dynamic = {(item["target"], item["resolution"]) for item in report["imports"]
+               if item["kind"] == "dynamic_import"}
+
+    assert ("sample.service", "local") in dynamic
+    assert ("sample.models", "local") in dynamic
+    assert ("requests", "external_or_unresolved") in dynamic
+    assert ("json", "stdlib") in dynamic
+    assert any(item["code"] == "python-dynamic-import-unresolved" for item in report["diagnostics"])
+    assert "secret" not in str(report)
+    assert not marker.exists()
     assert report["analysis_scope"]["executed_project_code"] is False
