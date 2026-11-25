@@ -236,8 +236,12 @@ def _module_contract(path: str, raw: bytes,
         if literal is None:
             dynamic = True
             exported = None
-        elif isinstance(node, ast.AugAssign) and isinstance(node.op, ast.Add) and exported is not None:
-            exported = exported + literal
+        elif isinstance(node, ast.AugAssign):
+            if isinstance(node.op, ast.Add) and exported is not None:
+                exported = exported + literal
+            else:
+                dynamic = True
+                exported = None
         else:
             exported = literal
     all_public_symbols = tuple(sorted(
