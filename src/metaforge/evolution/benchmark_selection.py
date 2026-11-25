@@ -32,6 +32,8 @@ def passes_baseline_gate(
 
     candidate_medians: list[float] = []
     baseline_medians: list[float] = []
+    candidate_mads: list[float] = []
+    baseline_mads: list[float] = []
     for name in baseline_workloads:
         candidate = candidate_workloads[name]
         baseline = baseline_workloads[name]
@@ -56,14 +58,19 @@ def passes_baseline_gate(
             or baseline_mad is None
         ):
             return False
-        # Reject apparent gains that are smaller than the observed robust spread.
-        if candidate_median + candidate_mad > baseline_median - baseline_mad:
-            return False
         if candidate_median > baseline_median * (1 + maximum_workload_regression_ratio):
             return False
         candidate_medians.append(candidate_median)
         baseline_medians.append(baseline_median)
+        candidate_mads.append(candidate_mad)
+        baseline_mads.append(baseline_mad)
 
     candidate_score = statistics.median(candidate_medians)
     baseline_score = statistics.median(baseline_medians)
-    return candidate_score <= baseline_score * (1 - minimum_improvement_ratio)
+    candidate_spread = statistics.median(candidate_mads)
+    baseline_spread = statistics.median(baseline_mads)
+    # The aggregate gain must clear both the required margin and observed robust spread.
+    return (
+        candidate_score <= baseline_score * (1 - minimum_improvement_ratio)
+        and candidate_score + candidate_spread < baseline_score - baseline_spread
+    )
