@@ -88,3 +88,13 @@ Python console scripts, GUI scripts, plugin entry points, and Poetry scripts are
 against the statically analyzed module and symbol inventory. Rust Cargo binaries,
 Node package bins, and Composer binaries are recorded but not resolved by language
 parsers yet. No declared command, build script, or application entry point is executed.
+
+
+### Dynamic Python imports
+
+The analyzer recognizes statically bounded literal targets passed to the built-in
+__import__ and importlib.import_module forms, including common import aliases and
+literal relative imports with a literal package argument. It adds these edges to the
+static import graph. Non-literal, malformed, oversized, and unsupported targets produce
+diagnostics rather than being evaluated. This does not resolve runtime-generated
+module names or emulate Python import hooks.
