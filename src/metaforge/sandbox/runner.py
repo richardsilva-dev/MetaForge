@@ -105,7 +105,7 @@ _trusted_stdout_write(_trusted_json_dumps(
 """
 
 _RUNNER_SOURCE = r"""
-import ctypes, json, os, resource, socket, subprocess, sys, time
+import ctypes, json, os, resource, selectors, socket, subprocess, sys, time
 
 _trusted_system_exit = SystemExit
 
@@ -194,6 +194,63 @@ _trusted_monotonic = time.monotonic
 _trusted_popen = subprocess.Popen
 _trusted_killpg = os.killpg
 _trusted_process_lookup_error = ProcessLookupError
+
+def collect_bounded_child_output(child, timeout, stdout_limit, stderr_limit):
+    selector = selectors.DefaultSelector()
+    buffers = {child.stdout: bytearray(), child.stderr: bytearray()}
+    limits = {child.stdout: stdout_limit, child.stderr: stderr_limit}
+    failure = None
+    for stream in buffers:
+        os.set_blocking(stream.fileno(), False)
+        selector.register(stream, selectors.EVENT_READ)
+
+    deadline = _trusted_monotonic() + timeout
+    try:
+        while selector.get_map():
+            remaining = deadline - _trusted_monotonic()
+            if remaining <= 0:
+                failure = "timeout"
+                break
+            for key, _ in selector.select(min(remaining, 0.1)):
+                try:
+                    chunk = os.read(key.fd, 65_536)
+                except BlockingIOError:
+                    continue
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    key.fileobj.close()
+                    continue
+                target = buffers[key.fileobj]
+                if len(target) + len(chunk) > limits[key.fileobj]:
+                    failure = "overflow"
+                    break
+                target.extend(chunk)
+            if failure is not None:
+                break
+
+        if failure is not None:
+            try:
+                _trusted_killpg(child.pid, 9)
+            except (OSError, _trusted_process_lookup_error):
+                pass
+            try:
+                child.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait(timeout=1)
+            return None, None, failure
+
+        child.wait()
+        return bytes(buffers[child.stdout]), bytes(buffers[child.stderr]), None
+    finally:
+        selector.close()
+        for stream in buffers:
+            try:
+                stream.close()
+            except OSError:
+                pass
+
+
 _libc = ctypes.CDLL(None, use_errno=True)
 if _libc.prctl(4, 0, 0, 0, 0) != 0:  # PR_SET_DUMPABLE=0 prevents child /proc fd inspection.
     fail(42)
@@ -229,15 +286,13 @@ for _ in _trusted_range(repeat_count):
             cwd=os.path.dirname(os.path.abspath(sys.argv[3])),
             start_new_session=True,
         )
-        try:
-            child_stdout, child_stderr = child.communicate(timeout=remaining)
-        except subprocess.TimeoutExpired:
-            try:
-                _trusted_killpg(child.pid, 9)
-            except (OSError, _trusted_process_lookup_error):
-                pass
-            child_stdout, child_stderr = child.communicate()
+        child_stdout, child_stderr, child_failure = collect_bounded_child_output(
+            child, remaining, max_output_bytes, 65_536
+        )
+        if child_failure == "timeout":
             fail(34)
+        if child_failure == "overflow":
+            fail(37)
         elapsed = _trusted_clock() - started
         try:
             _trusted_killpg(child.pid, 9)

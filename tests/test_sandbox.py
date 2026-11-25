@@ -295,3 +295,37 @@ def test_sandbox_timeout_cleans_container_even_before_cidfile_is_written(tmp_pat
     cleanup = Path(str(runtime) + ".cleanup").read_text(encoding="utf-8")
     assert "kill metaforge-" in cleanup
     assert "rm -f metaforge-" in cleanup
+
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="worker supervisor is a Linux process")
+def test_candidate_stdout_is_bounded_before_supervisor_buffers_it(tmp_path):
+    import subprocess
+
+    from metaforge.sandbox.runner import _RUNNER_SOURCE, _WORKER_SOURCE
+
+    runner_path = tmp_path / "runner.py"
+    worker_path = tmp_path / "candidate_worker.py"
+    candidate_path = tmp_path / "candidate.py"
+    input_path = tmp_path / "input.json"
+    runner_path.write_text(_RUNNER_SOURCE, encoding="utf-8")
+    worker_path.write_text(_WORKER_SOURCE, encoding="utf-8")
+    candidate_path.write_text(
+        "def solve(values):\n"
+        "    print('x' * 1000000)\n"
+        "    values.sort()\n"
+        "    return values\n",
+        encoding="utf-8",
+    )
+    input_path.write_text(json.dumps({"values": [9, 1, 5, 2]}), encoding="utf-8")
+
+    completed = subprocess.run(
+        [sys.executable, "-I", str(runner_path), str(candidate_path), str(input_path), str(worker_path), "1", "0", "5", "1024"],
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=False,
+    )
+
+    assert completed.returncode != 0
+    assert len(completed.stdout.encode("utf-8")) < 4096
