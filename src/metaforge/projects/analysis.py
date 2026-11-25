@@ -376,6 +376,7 @@ def analyze_project(snapshot: ProjectSnapshot) -> ProjectAnalysis:
     """Build a deterministic static inventory; never import or execute project source."""
     if not isinstance(snapshot, ProjectSnapshot): raise ProjectContractError("A ProjectSnapshot is required")
     files = []
+    modules, imports, symbols, diagnostics, counts, entry_points, manifest_dependencies = [], [], [], [], {}, [], []
     for entry in snapshot.files:
         language = _LANGUAGES.get(PurePosixPath(entry.path).suffix.casefold())
         is_manifest = PurePosixPath(entry.path).name.casefold() in _MANIFEST_NAMES and "/" not in entry.path
@@ -390,7 +391,6 @@ def analyze_project(snapshot: ProjectSnapshot) -> ProjectAnalysis:
             continue
         files.append((entry.path, language, raw))
     known = {name for path, lang, _ in files if lang == "python" and (name := _module_name(path))}
-    modules, imports, symbols, diagnostics, counts, entry_points, manifest_dependencies = [], [], [], [], {}, [], []
     for path, language, raw in files:
         counts[language] = counts.get(language, 0) + 1
         module, status = (_module_name(path), "inventory_only") if language == "python" else (None, "inventory_only")
