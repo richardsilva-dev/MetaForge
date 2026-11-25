@@ -161,6 +161,17 @@ def _relative_target(current: str | None, level: int, target: str | None, packag
     if target: parts.extend(target.split("."))
     return ".".join(parts)
 
+def _literal_string(node: ast.AST | None) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _literal_string(node.left)
+        right = _literal_string(node.right)
+        if left is not None and right is not None and len(left) + len(right) <= 512:
+            return left + right
+    return None
+
+
 def _parse_python(path: str, raw: bytes, known: set[str]):
     imports, symbols, diagnostics = [], [], []
     try:
@@ -202,6 +213,52 @@ def _parse_python(path: str, raw: bytes, known: set[str]):
                     root_name = (target or "").split(".", 1)[0]
                     resolution = "local" if local else ("stdlib" if root_name in sys.stdlib_module_names else "external_or_unresolved")
                 imports.append(ProjectImport(path, target or ".", node.lineno, "from", resolution))
+    importlib_aliases: set[str] = set()
+    import_module_aliases: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "importlib" or alias.name == "importlib.util":
+                    importlib_aliases.add(alias.asname or "importlib")
+        elif isinstance(node, ast.ImportFrom) and node.module == "importlib":
+            for alias in node.names:
+                if alias.name == "import_module":
+                    import_module_aliases.add(alias.asname or alias.name)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        is_dynamic_import = (
+            isinstance(node.func, ast.Name) and (
+                node.func.id == "__import__" or node.func.id in import_module_aliases
+            )
+        ) or (
+            isinstance(node.func, ast.Attribute) and node.func.attr == "import_module"
+            and isinstance(node.func.value, ast.Name) and node.func.value.id in importlib_aliases
+        )
+        if not is_dynamic_import:
+            continue
+        target = _literal_string(node.args[0]) if node.args else None
+        if target is None:
+            diagnostics.append({"path": path, "code": "python-dynamic-import-unresolved",
+                                "severity": "warning", "line": node.lineno})
+            continue
+        if target.startswith("."):
+            package_node = node.args[1] if len(node.args) > 1 else next(
+                (keyword.value for keyword in node.keywords if keyword.arg == "package"), None
+            )
+            package = _literal_string(package_node) if package_node is not None else None
+            if package and isinstance(node.func, (ast.Name, ast.Attribute)) and not (
+                isinstance(node.func, ast.Name) and node.func.id == "__import__"
+            ):
+                level = len(target) - len(target.lstrip("."))
+                target = _relative_target(package, level, target.lstrip("."), True)
+            else:
+                imports.append(ProjectImport(path, target, node.lineno, "dynamic_import", "relative_unresolved"))
+                continue
+        local = target in known or any(module.startswith(target + ".") for module in known)
+        root_name = target.split(".", 1)[0]
+        resolution = "local" if local else ("stdlib" if root_name in sys.stdlib_module_names else "external_or_unresolved")
+        imports.append(ProjectImport(path, target, node.lineno, "dynamic_import", resolution))
     for node in tree.body:
         if isinstance(node, ast.ClassDef) and not node.name.startswith("_"):
             bases = "(" + ", ".join(ast.unparse(x) for x in node.bases) + ")" if node.bases else ""
