@@ -86,7 +86,7 @@ def test_secret_scan_detects_prefixed_and_standalone_secret_assignments(tmp_path
     root = tmp_path / "project"
     (root / "src").mkdir(parents=True)
     (root / "src" / "settings.py").write_text(
-        "\\n".join([
+        "\n".join([
             'AWS_SECRET_ACCESS_KEY = "aws-secret-value-123456"',
             'DATABASE_PASSWORD = "database-password-value-123"',
             'SECRET = "standalone-secret-value-987"',
