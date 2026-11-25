@@ -311,10 +311,10 @@ def test_candidate_stdout_is_bounded_before_supervisor_buffers_it(tmp_path):
     runner_path.write_text(_RUNNER_SOURCE, encoding="utf-8")
     worker_path.write_text(_WORKER_SOURCE, encoding="utf-8")
     candidate_path.write_text(
-        "def solve(values):\\n"
-        "    print('x' * 1000000)\\n"
-        "    values.sort()\\n"
-        "    return values\\n",
+        "def solve(values):\n"
+        "    print('x' * 1000000)\n"
+        "    values.sort()\n"
+        "    return values\n",
         encoding="utf-8",
     )
     input_path.write_text(json.dumps({"values": [9, 1, 5, 2]}), encoding="utf-8")
