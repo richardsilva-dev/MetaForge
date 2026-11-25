@@ -4,7 +4,8 @@ from dataclasses import dataclass
 import hashlib
 import json
 import re
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
+import unicodedata
 from typing import Any
 
 
@@ -91,9 +92,24 @@ class SnapshotFile:
 class ProjectSnapshot:
     """Immutable file manifest captured from an allow-listed project surface."""
 
-    root: Any
+    root: Path
     files: tuple[SnapshotFile, ...]
     total_bytes: int
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.root, Path):
+            raise ProjectContractError("Snapshot root must be a pathlib Path")
+        if not isinstance(self.files, tuple) or any(
+            not isinstance(item, SnapshotFile) for item in self.files
+        ):
+            raise ProjectContractError("Snapshot files must be a tuple of SnapshotFile records")
+        paths = [item.path.casefold() for item in self.files]
+        if paths != sorted(paths) or len(paths) != len(set(paths)):
+            raise ProjectContractError("Snapshot manifest must be sorted and path-unique")
+        if type(self.total_bytes) is not int or self.total_bytes != sum(
+            item.size_bytes for item in self.files
+        ):
+            raise ProjectContractError("Snapshot total_bytes does not match its manifest")
 
     @property
     def fingerprint(self) -> str:
@@ -234,6 +250,10 @@ def _validate_project_path(path: str, action: str) -> str:
         raise ProjectContractError("Patch path must contain 1..240 characters")
     if "\x00" in path or "\\" in path or ":" in path:
         raise ProjectContractError("Patch path contains a forbidden character")
+    if unicodedata.normalize("NFC", path) != path:
+        raise ProjectContractError("Patch path must use Unicode NFC normalization")
+    if any(unicodedata.category(char).startswith("C") for char in path):
+        raise ProjectContractError("Patch path contains a control or formatting character")
     if path.startswith("/") or path.endswith("/") or "//" in path:
         raise ProjectContractError("Patch path must be a normalized relative POSIX path")
     parts = path.split("/")
@@ -241,7 +261,7 @@ def _validate_project_path(path: str, action: str) -> str:
         raise ProjectContractError("Patch path traversal or empty path components are forbidden")
     if any(
         part.startswith(".") or part.endswith((".", " "))
-        or part in _IGNORED_DIRECTORY_NAMES
+        or part.casefold() in _IGNORED_DIRECTORY_NAMES
         for part in parts
     ):
         raise ProjectContractError("Hidden, generated, and excluded paths are forbidden")
