@@ -130,6 +130,10 @@ def test_snapshot_rejects_non_utf8_and_enforces_file_and_byte_budgets(tmp_path):
         capture_project_snapshot(root, ProjectPolicy(max_snapshot_files=1))
     with pytest.raises(ProjectContractError, match="byte limit"):
         capture_project_snapshot(root, ProjectPolicy(max_snapshot_bytes=1_024))
+    with pytest.raises(ProjectContractError, match="entry-count"):
+        capture_project_snapshot(root, ProjectPolicy(max_snapshot_entries=1))
+    with pytest.raises(ProjectContractError):
+        ProjectPolicy(max_snapshot_entries=True)
 
 
 @pytest.mark.parametrize(
