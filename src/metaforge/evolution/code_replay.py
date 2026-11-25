@@ -11,7 +11,10 @@ from typing import Any
 
 from metaforge.agents.code_safety import StaticCodeReviewer
 from metaforge.evolution.metadata import runtime_metadata
-from metaforge.evolution.benchmark_selection import passes_baseline_gate
+from metaforge.evolution.benchmark_selection import (
+    MINIMUM_PROMOTION_REPEATS,
+    passes_baseline_gate,
+)
 from metaforge.evolution.workloads import (
     INTEGER_SORT_SUITE_NAME,
     INTEGER_SORT_SUITE_VERSION,
@@ -294,6 +297,7 @@ class CodeReplayEngine:
         selection = {
             "policy": "baseline_gated_minimum_relative_improvement",
             "minimum_improvement_ratio": 0.05,
+            "minimum_repeats_for_promotion": MINIMUM_PROMOTION_REPEATS,
             "baseline_median_seconds": baseline_score,
             "selected_median_seconds": best["median_algorithm_seconds"],
             "selected_source": "candidate" if promoted else "trusted_baseline",
