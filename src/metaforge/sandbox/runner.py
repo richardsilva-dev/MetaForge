@@ -98,9 +98,25 @@ if _trusted_type(result) is not _trusted_list_type or _trusted_any(
     _trusted_type(value) is not _trusted_int_type for value in result
 ):
     fail(31)
-_trusted_stdout_write(_trusted_json_dumps(
-    {"output": result}, separators=(",", ":")
-) + "\n")
+response = {"output": result}
+summary = namespace.get("__metaforge_test_summary__")
+if summary is not None:
+    expected_keys = {"tests_run", "failures", "errors", "skipped", "successful"}
+    if _trusted_type(summary) is not dict or set(summary) != expected_keys:
+        fail(46)
+    for key in ("tests_run", "failures", "errors", "skipped"):
+        if _trusted_type(summary[key]) is not _trusted_int_type or summary[key] < 0:
+            fail(47)
+    if _trusted_type(summary["successful"]) is not bool:
+        fail(48)
+    response["test_summary"] = {
+        "tests_run": summary["tests_run"],
+        "failures": summary["failures"],
+        "errors": summary["errors"],
+        "skipped": summary["skipped"],
+        "successful": summary["successful"],
+    }
+_trusted_stdout_write(_trusted_json_dumps(response, separators=(",", ":")) + "\n")
 
 """
 
