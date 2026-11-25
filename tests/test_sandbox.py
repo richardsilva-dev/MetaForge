@@ -458,3 +458,12 @@ def test_additional_project_files_reject_traversal_before_runtime(tmp_path):
     assert result.success is False
     assert result.error == "Additional project path is invalid"
     assert not Path(str(runtime) + ".args").exists()
+
+
+def test_sandbox_policy_bounds_project_workspace_size():
+    with pytest.raises(ValueError):
+        SandboxPolicy(image=IMAGE, max_project_files=0)
+    with pytest.raises(ValueError):
+        SandboxPolicy(image=IMAGE, max_project_bytes=512)
+    with pytest.raises(ValueError):
+        SandboxPolicy(image=IMAGE, max_project_files=True)
