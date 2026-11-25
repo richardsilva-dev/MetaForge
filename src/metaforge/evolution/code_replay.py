@@ -138,6 +138,19 @@ class CodeReplayEngine:
         if len(scheduled) > 20:
             raise ValueError("Archived candidate schedule exceeds the replay limit")
 
+        # Replay measures the same trusted reference so historical candidate
+        # rankings use the same promotion rule as a fresh evolution run.
+        baseline_source = "def solve(values):\\n    return sorted(values)\\n"
+        baseline_fingerprint = hashlib.sha256(baseline_source.encode("utf-8")).hexdigest()
+        scheduled[baseline_fingerprint] = {
+            "source_code": baseline_source,
+            "fingerprint": baseline_fingerprint,
+            "generation": -1,
+            "proposal_index": 0,
+            "parent_fingerprint": None,
+            "rationale": "Trusted Python sorted() reference",
+        }
+
         deadline = time.monotonic() + self.global_timeout_seconds
         preparation: SandboxPreparation = self.sandbox_runner.prepare()
         if not preparation.rootless:
@@ -250,8 +263,32 @@ class CodeReplayEngine:
             if stop_reason == "global_timeout":
                 break
 
-        valid = [item for item in results if item["correctness_passed"]]
-        best = min(valid, key=lambda item: item["median_algorithm_seconds"]) if valid else None
+        baseline = next(
+            (item for item in results if item["candidate"].get("generation") == -1 and item["correctness_passed"]),
+            None,
+        )
+        if baseline is None:
+            raise RuntimeError("Trusted baseline failed during replay; candidate ranking is invalid")
+        baseline_score = baseline["median_algorithm_seconds"]
+        promoted = [
+            item for item in results
+            if item["correctness_passed"]
+            and item["candidate"].get("generation") != -1
+            and item["median_algorithm_seconds"] <= baseline_score * 0.95
+        ]
+        best = min(promoted, key=lambda item: item["median_algorithm_seconds"]) if promoted else baseline
+        selection = {
+            "policy": "baseline_gated_minimum_relative_improvement",
+            "minimum_improvement_ratio": 0.05,
+            "baseline_median_seconds": baseline_score,
+            "selected_median_seconds": best["median_algorithm_seconds"],
+            "selected_source": "candidate" if promoted else "trusted_baseline",
+            "improvement_ratio": (
+                (baseline_score - best["median_algorithm_seconds"]) / baseline_score
+                if baseline_score else 0.0
+            ),
+            "candidate_promoted": bool(promoted),
+        }
         return {
             "schema_version": "1.1",
             "run_id": uuid4().hex,
@@ -266,6 +303,8 @@ class CodeReplayEngine:
             "dataset_sha256": dataset_sha256,
             "benchmark": benchmark_metadata,
             "candidate_results": results,
+            "baseline": baseline,
+            "selection": selection,
             "best_candidate": best,
             "budget": {
                 "candidate_count": len(scheduled),
