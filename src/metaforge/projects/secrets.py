@@ -107,6 +107,21 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str], str], ...] = (
         "high",
     ),
     (
+        "stripe-secret-key",
+        re.compile(r"(?<![A-Za-z0-9])(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}"),
+        "high",
+    ),
+    (
+        "groq-api-key",
+        re.compile(r"(?<![A-Za-z0-9])gsk_[A-Za-z0-9]{20,}"),
+        "high",
+    ),
+    (
+        "huggingface-token",
+        re.compile(r"(?<![A-Za-z0-9])hf_[A-Za-z0-9]{20,}"),
+        "high",
+    ),
+    (
         "aws-access-key-id",
         re.compile(r"(?<![A-Z0-9])(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Z0-9])"),
         "medium",
@@ -132,8 +147,9 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str], str], ...] = (
     (
         "credential-assignment",
         re.compile(
-            r"""(?ix)\b(?:api[_-]?key|client[_-]?secret|secret|secret[_-]?key|"""
-            r"""access[_-]?token|auth[_-]?token|password|passwd|private[_-]?key)"""
+            r"""(?ix)\b(?:[a-z0-9]+[_-])*(?:api[_-]?key|client[_-]?secret|"""
+            r"""secret(?:[_-]?(?:access[_-]?)?key)?|access[_-]?token|auth[_-]?token|"""
+            r"""password|passwd|private[_-]?key)"""
             r"""\b\s*[:=]\s*["']?([^\s"']{8,})"""
         ),
         "medium",
@@ -149,7 +165,8 @@ _PLACEHOLDER_VALUES = frozenset({
     "none", "null", "undefined", "changeme", "change_me", "change-this",
     "example", "placeholder", "your_api_key", "your-token", "your-secret",
     "redacted", "dummy", "test", "testing", "password", "secret",
-    "os.getenv", "getenv(", "process.env", "env[", "settings.", "config.",
+    "os.getenv", "os.environ", "environ.get(", "getenv(", "process.env",
+    "system.getenv", "getenvironmentvariable", "env[", "settings.", "config.",
 })
 
 
@@ -159,7 +176,8 @@ def _is_placeholder(value: str) -> bool:
         return True
     return normalized.startswith((
         "your_", "your-", "example_", "example-", "placeholder_",
-        "$" + "{", "$env:", "os.getenv", "getenv(", "process.env",
+        "$" + "{", "$env:", "$", "os.getenv", "os.environ", "environ.get(",
+        "getenv(", "process.env", "system.getenv", "getenvironmentvariable",
     ))
 
 
