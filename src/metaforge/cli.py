@@ -132,6 +132,9 @@ def main() -> int:
     project_apply.add_argument("--allow-breaking-changes", action="store_true")
     project_apply.add_argument("--allow-new-cycles", action="store_true")
     project_apply.add_argument("--allow-unresolved-entrypoints", action="store_true")
+    project_validation = project_sub.add_parser("validation-plan", help="discover test targets and produce a static validation plan without executing project code")
+    project_validation.add_argument("root", type=Path)
+    project_validation.add_argument("--output", type=Path, default=Path(".artifacts/project-validation-plan.json"))
 
     replay = sub.add_parser("replay", help="re-run an archived experiment using its stored dataset")
     replay.add_argument("--run", type=Path, required=True, help="path to a prior experiment JSON")
@@ -250,6 +253,26 @@ def main() -> int:
             print(f"Fingerprint: {report['candidate_copy_fingerprint']}")
         print(f"Report: {args.output}")
         return 0 if report["candidate_copy_created"] else 1
+
+
+
+    if args.command == "project" and args.project_command == "validation-plan":
+        try:
+            from metaforge.projects import analyze_project, build_validation_plan, capture_project_snapshot
+            snapshot = capture_project_snapshot(args.root)
+            analysis = analyze_project(snapshot)
+            report = build_validation_plan(snapshot, analysis)
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+        except Exception as exc:
+            parser.error(f"project validation planning stopped safely: {type(exc).__name__}: {exc}")
+        print(f"Test targets discovered: {report['risk_summary']['test_targets']}")
+        print(f"Dependency cycles: {report['risk_summary']['dependency_cycles']}")
+        print(f"Unresolved imports: {report['risk_summary']['unresolved_imports']}")
+        print(f"Secret findings: {report['risk_summary']['secret_findings']}")
+        print("Project code executed: False")
+        print(f"Report: {args.output}")
+        return 1 if report["risk_summary"]["secret_findings"] or report["risk_summary"]["secret_findings_truncated"] else 0
 
 
     if args.command == "run":
