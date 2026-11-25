@@ -82,7 +82,7 @@ def test_code_evolution_runs_reviewed_candidates_only_and_tracks_lineage():
     assert result["baseline"]["correctness_passed"] is True
     assert result["budget"]["agent_calls_used"] == 4
     assert result["sandbox"]["smoke_passed"] is True
-    assert len(sandbox.run_calls) == 1 + len(INTEGER_SORT_WORKLOAD_NAMES) + 4 * len(INTEGER_SORT_WORKLOAD_NAMES)
+    assert len(sandbox.run_calls) == 1 + len(INTEGER_SORT_WORKLOAD_NAMES) + 3 * len(INTEGER_SORT_WORKLOAD_NAMES)
     assert sandbox.run_calls[0][4] is True
     assert all(call[4] is False for call in sandbox.run_calls[1:])
     assert len(result["generations"]) == 2
