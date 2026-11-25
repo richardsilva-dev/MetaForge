@@ -45,7 +45,7 @@ def compare_project_analyses(
         previous = old_contracts.get(path)
         current = new_contracts.get(path)
         if previous is None:
-            for name in current.get("exported_names", []) if current else []:
+            for name in current.get("exported_names", []):
                 api_additions.append({"path": path, "kind": "module_export_added", "name": name})
             continue
         if current is None:
