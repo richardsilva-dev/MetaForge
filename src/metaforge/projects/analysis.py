@@ -240,20 +240,27 @@ def _module_contract(path: str, raw: bytes,
             exported = exported + literal
         else:
             exported = literal
-    public_symbols = tuple(sorted(
-        (item for item in symbols if item.path == path and item.kind in {"class", "function"}),
+    all_public_symbols = tuple(sorted(
+        (item for item in symbols if item.path == path),
         key=lambda item: (item.line, item.name),
     ))
     if declared and exported is not None and not dynamic:
         names = tuple(dict.fromkeys(exported))
+        allowed = set(names)
+        public_symbols = tuple(item for item in all_public_symbols
+                               if item.name in allowed or (
+                                   item.kind == "method" and item.name.split(".", 1)[0] in allowed
+                               ))
         confidence = "declared_static_all"
     elif declared:
-        names = tuple(item.name for item in public_symbols)
+        names = tuple(item.name for item in all_public_symbols if item.kind in {"class", "function"})
+        public_symbols = all_public_symbols
         confidence = "dynamic_all_fallback"
         diagnostics.append({"path": path, "code": "python-dynamic-all-unsupported",
                             "severity": "warning"})
     else:
-        names = tuple(item.name for item in public_symbols)
+        names = tuple(item.name for item in all_public_symbols if item.kind in {"class", "function"})
+        public_symbols = all_public_symbols
         confidence = "inferred_public_definitions"
     return ProjectModuleContract(path, _module_name(path), declared, names,
                                  public_symbols, confidence), diagnostics
