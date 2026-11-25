@@ -389,3 +389,40 @@ def test_patch_application_refuses_existing_destination_and_overlap(tmp_path):
         apply_patch_to_copy(snapshot, patch, existing)
     with pytest.raises(ProjectContractError, match="overlap"):
         apply_patch_to_copy(snapshot, patch, root / "nested")
+
+
+def test_snapshot_enforces_maximum_directory_depth(tmp_path):
+    root = tmp_path / "project"
+    (root / "src" / "one" / "two").mkdir(parents=True)
+    (root / "src" / "one" / "two" / "module.py").write_text("value = 1\\n", encoding="utf-8")
+
+    with pytest.raises(ProjectContractError, match="directory-depth"):
+        capture_project_snapshot(root, ProjectPolicy(max_snapshot_depth=1))
+
+    snapshot = capture_project_snapshot(root, ProjectPolicy(max_snapshot_depth=2))
+    assert "src/one/two/module.py" in {item.path for item in snapshot.files}
+
+
+def test_snapshot_rejects_detected_mount_points_inside_roots(tmp_path, monkeypatch):
+    import metaforge.projects.snapshot as snapshot_module
+
+    root = tmp_path / "project"
+    mountpoint = root / "src" / "mounted"
+    mountpoint.mkdir(parents=True)
+    (mountpoint / "module.py").write_text("value = 1\\n", encoding="utf-8")
+    original_ismount = snapshot_module.os.path.ismount
+    monkeypatch.setattr(
+        snapshot_module.os.path,
+        "ismount",
+        lambda path: Path(path) == mountpoint or original_ismount(path),
+    )
+
+    with pytest.raises(ProjectContractError, match="mount points"):
+        capture_project_snapshot(root)
+
+
+def test_project_policy_rejects_boolean_or_out_of_range_snapshot_depth():
+    with pytest.raises(ProjectContractError):
+        ProjectPolicy(max_snapshot_depth=True)
+    with pytest.raises(ProjectContractError):
+        ProjectPolicy(max_snapshot_depth=257)
