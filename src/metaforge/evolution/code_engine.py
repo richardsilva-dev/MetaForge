@@ -92,6 +92,10 @@ class CodeEvaluation:
 class CodeEvolutionEngine:
     """Generate, review, and sandbox-evaluate Python sorting source across workloads."""
 
+    # Require a meaningful measured gain; correctness alone never promotes a mutation.
+    MIN_IMPROVEMENT_RATIO = 0.05
+    BASELINE_SOURCE = "def solve(values):\\n    return sorted(values)\\n"
+
     def __init__(
         self,
         designer: Any,
@@ -245,6 +249,20 @@ class CodeEvolutionEngine:
             raise RuntimeError(f"Rootless sandbox smoke failed: {detail or 'policy verification failed'}")
         if len(smoke.algorithm_samples_seconds) != 2:
             raise RuntimeError("Rootless sandbox smoke returned invalid timing samples")
+
+        # Measure the trusted reference under the exact same workload suite and sandbox.
+        baseline_candidate = CodeCandidate.create(
+            self.BASELINE_SOURCE, "Trusted Python sorted() reference", -1, 0, None, "trusted-baseline"
+        )
+        baseline_review = self.reviewer.review(self.BASELINE_SOURCE)
+        if not baseline_review.approved:
+            raise RuntimeError("Trusted baseline did not pass static review")
+        baseline_evaluation = self._evaluate_candidate(
+            baseline_candidate, baseline_review, workloads, deadline
+        )
+        if not baseline_evaluation.success or baseline_evaluation.median_algorithm_seconds is None:
+            raise RuntimeError("Trusted baseline failed correctness or benchmark validation")
+
         calls_used = 0
         stop_reason = "generation_limit"
         seen_fingerprints: set[str] = set()
@@ -367,8 +385,11 @@ class CodeEvolutionEngine:
 
                 evaluation = self._evaluate_candidate(candidate, review, workloads, deadline)
                 evaluations.append(evaluation)
-                if evaluation.success:
-                    all_valid.append(evaluation)
+                if evaluation.success and evaluation.median_algorithm_seconds is not None:
+                    baseline_score = baseline_evaluation.median_algorithm_seconds
+                    required_score = baseline_score * (1.0 - self.MIN_IMPROVEMENT_RATIO)
+                    if evaluation.median_algorithm_seconds <= required_score:
+                        all_valid.append(evaluation)
                 if time.monotonic() >= deadline:
                     stop_reason = "global_timeout"
                     break
@@ -384,18 +405,27 @@ class CodeEvolutionEngine:
                 "evaluations": [item.to_dict() for item in evaluations],
                 "valid_count": sum(item.success for item in evaluations),
             })
-            current_parents = [item for item in evaluations if item.success]
+            current_parents = [
+                item for item in evaluations
+                if item.success and item.median_algorithm_seconds is not None
+                and item.median_algorithm_seconds <= baseline_evaluation.median_algorithm_seconds * (1.0 - self.MIN_IMPROVEMENT_RATIO)
+            ]
             parent_pool = current_parents[:2] or sorted(
                 all_valid, key=lambda item: item.median_algorithm_seconds if item.median_algorithm_seconds is not None else float("inf")
             )[:2]
+            if not parent_pool:
+                parent_pool = [baseline_evaluation]
             if stop_reason in {"global_timeout", "agent_call_budget_exhausted"}:
                 break
 
-        best = min(
+        best_candidate = min(
             all_valid,
             key=lambda item: item.median_algorithm_seconds
             if item.median_algorithm_seconds is not None else float("inf"),
-        ) if all_valid else None
+        ) if all_valid else baseline_evaluation
+        best_is_candidate = bool(all_valid)
+        baseline_score = baseline_evaluation.median_algorithm_seconds
+        best_score = best_candidate.median_algorithm_seconds
         return {
             "schema_version": "1.1",
             "run_id": uuid4().hex,
@@ -415,7 +445,17 @@ class CodeEvolutionEngine:
                 "workload_sha256": workload_digests,
             },
             "generations": history,
-            "best_candidate": best.to_dict() if best else None,
+            "baseline": baseline_evaluation.to_dict(),
+            "selection": {
+                "policy": "baseline_gated_minimum_relative_improvement",
+                "minimum_improvement_ratio": self.MIN_IMPROVEMENT_RATIO,
+                "baseline_median_seconds": baseline_score,
+                "selected_median_seconds": best_score,
+                "selected_source": "candidate" if best_is_candidate else "trusted_baseline",
+                "improvement_ratio": (baseline_score - best_score) / baseline_score if baseline_score else 0.0,
+                "candidate_promoted": best_is_candidate,
+            },
+            "best_candidate": best_candidate.to_dict() if best_candidate else None,
             "budget": {
                 "max_agent_calls": self.max_agent_calls,
                 "agent_calls_used": calls_used,
