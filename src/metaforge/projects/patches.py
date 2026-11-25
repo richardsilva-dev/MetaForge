@@ -5,6 +5,7 @@ import os
 from pathlib import Path, PurePosixPath
 import shutil
 import stat
+import sys
 import tempfile
 
 from metaforge.projects.models import (
@@ -130,6 +131,45 @@ def _replace_file_atomically(path: Path, content: bytes) -> None:
             raise
 
 
+
+
+def _rename_directory_no_replace(source: Path, destination: Path) -> None:
+    """Atomically install a staged directory only if the destination is absent."""
+    if os.name == "nt":
+        # Windows rename fails when the destination already exists.
+        os.rename(source, destination)
+        return
+    if not sys.platform.startswith("linux"):
+        raise ProjectContractError(
+            "Atomic no-replace directory installation is unsupported on this POSIX platform"
+        )
+
+    import ctypes
+
+    libc = ctypes.CDLL(None, use_errno=True)
+    renameat2 = getattr(libc, "renameat2", None)
+    if renameat2 is None:
+        raise ProjectContractError(
+            "The platform does not expose renameat2; refusing a racy destination install"
+        )
+    renameat2.argtypes = [
+        ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint
+    ]
+    renameat2.restype = ctypes.c_int
+    at_fdcwd = -100
+    rename_noreplace = 1
+    result = renameat2(
+        at_fdcwd,
+        os.fsencode(source),
+        at_fdcwd,
+        os.fsencode(destination),
+        rename_noreplace,
+    )
+    if result != 0:
+        error_number = ctypes.get_errno()
+        raise OSError(error_number, os.strerror(error_number), str(destination))
+
+
 def _verify_non_overlapping_roots(source_root: Path, destination_root: Path) -> None:
     if (
         destination_root == source_root
@@ -149,9 +189,10 @@ def apply_patch_to_copy(
 
     The source is re-snapshotted before copying and every copied file is hashed
     again. The destination must not exist. All writes occur in a temporary
-    sibling directory and are atomically renamed into place only after the
-    complete staged snapshot is valid. No candidate code, build, or test
-    command is executed by this function.
+    sibling directory and are atomically installed without replacing a raced
+    destination. If final validation fails after publication, the path is
+    preserved for inspection rather than recursively deleting possible user data.
+    No candidate code, build, or test command is executed by this function.
     """
     policy = policy or ProjectPolicy()
     if not isinstance(policy, ProjectPolicy):
@@ -191,7 +232,6 @@ def apply_patch_to_copy(
     _verify_non_overlapping_roots(source_root, target_root.resolve(strict=False))
 
     stage = Path(tempfile.mkdtemp(prefix=f".{target_root.name}.metaforge-", dir=parent))
-    installed = False
     try:
         for entry in snapshot.files:
             target = stage / PurePosixPath(entry.path)
@@ -225,16 +265,11 @@ def apply_patch_to_copy(
 
         # Validate the staged tree before making it visible as the destination.
         staged_snapshot = capture_project_snapshot(stage, policy)
-        os.replace(stage, target_root)
-        installed = True
+        _rename_directory_no_replace(stage, target_root)
         final_snapshot = capture_project_snapshot(target_root, policy)
         if final_snapshot.fingerprint != staged_snapshot.fingerprint:
             raise ProjectContractError("Installed project snapshot changed during finalization")
         return final_snapshot
-    except Exception:
-        if installed:
-            shutil.rmtree(target_root, ignore_errors=True)
-        raise
     finally:
         if stage.exists():
             shutil.rmtree(stage, ignore_errors=True)

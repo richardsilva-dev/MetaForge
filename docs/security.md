@@ -27,13 +27,19 @@ MetaForge has two separate evaluation paths.
 - The host independently validates the supervisor's JSON output and timing sample schema.
 - The host API key and other host environment variables are not passed into the container. The model API key is used only by the host-side SDK client.
 
+## Project patch installation
+
+- Project changes are staged in a private sibling directory and validated before publication.
+- Final directory installation is atomic and refuses to replace a destination created after the initial existence check. Linux uses `renameat2(RENAME_NOREPLACE)`; Windows uses non-replacing `os.rename`. Unsupported POSIX platforms fail closed rather than using a racy replace operation.
+- If post-install verification fails, the published path is preserved for inspection instead of recursively deleting a path that may have been concurrently replaced; this avoids deleting user data.
+
 ## Explicit limitations
 
 - A container is not a proof against kernel/runtime vulnerabilities or container escapes. Use a dedicated isolated host or VM for high-risk research.
 - The static AST reviewer is not a sandbox and must never be treated as one.
 - Project snapshots cap both included file count/bytes and the total number of directory entries traversed, including non-text and ignored entries, to bound traversal work and memory.
 - Project snapshots also cap traversal depth at 64 nested directories by default (configurable up to 256), reject detected mount points and cross-device boundaries inside allow-listed roots, and recheck device identity on secure file opens.
-- Device IDs plus the platform mount-point check do not detect every same-device bind mount on every platform; Windows path traversal also has weaker race resistance than POSIX descriptor-relative traversal.
+- Filesystem-boundary checks use device IDs on POSIX, plus `os.path.ismount`; on Windows they compare drive/share roots and reject reparse-point metadata for junctions and volume mount points because Windows `st_dev` and `ntpath.ismount` can misclassify ordinary directories. Same-device bind mounts may still be undetectable on some platforms, and Windows path traversal has weaker race resistance than POSIX descriptor-relative traversal.
 - The worker seccomp filter is a targeted denylist, not a complete syscall allow-list or proof against kernel/runtime vulnerabilities. The supervisor and worker still share a container UID; CPU, memory, PID, and wall-clock limits remain necessary to bound denial-of-service attempts.
 - Python tracemalloc does not measure total process memory. The source-level sandbox enforces a cgroup memory ceiling but does not yet report reliable per-candidate peak memory.
 - Source-level performance is measured only for Python candidates in the same pinned runtime/image. Do not compare those samples directly with C/Rust backend timings.

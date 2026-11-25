@@ -1,4 +1,5 @@
 import hashlib
+import os
 import json
 from pathlib import Path
 import pytest
@@ -296,13 +297,13 @@ def test_patch_apply_create_replace_and_delete_on_new_copy_only(tmp_path):
         {
             "path": "src/pkg/module.py",
             "action": "replace",
-            "expected_sha256": digest(old_source),
+            "expected_sha256": source_snapshot.file_map["src/pkg/module.py"].sha256,
             "content": "def value():\n    return 2\n",
         },
         {
             "path": "docs/design.md",
             "action": "delete",
-            "expected_sha256": digest(old_docs),
+            "expected_sha256": source_snapshot.file_map["docs/design.md"].sha256,
         },
         {
             "path": "src/pkg/new_module.py",
@@ -401,7 +402,7 @@ def test_validate_patch_rechecks_live_file_hash_against_snapshot(tmp_path):
     patch = ProjectPatch.from_dict(patch_dict({
         "path": "src/pkg/module.py",
         "action": "replace",
-        "expected_sha256": digest(original),
+        "expected_sha256": snapshot.file_map["src/pkg/module.py"].sha256,
         "content": "def value(): return 42\n",
     }))
     (root / "src" / "pkg" / "module.py").write_text("tampered = True\n", encoding="utf-8")
@@ -422,6 +423,7 @@ def test_snapshot_enforces_maximum_directory_depth(tmp_path):
     assert "src/one/two/module.py" in {item.path for item in snapshot.files}
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows junctions are checked via reparse-point metadata")
 def test_snapshot_rejects_detected_mount_points_inside_roots(tmp_path, monkeypatch):
     import metaforge.projects.snapshot as snapshot_module
 
@@ -445,3 +447,86 @@ def test_project_policy_rejects_boolean_or_out_of_range_snapshot_depth():
         ProjectPolicy(max_snapshot_depth=True)
     with pytest.raises(ProjectContractError):
         ProjectPolicy(max_snapshot_depth=257)
+
+
+def test_directory_install_refuses_to_replace_an_existing_empty_destination(tmp_path):
+    import metaforge.projects.patches as patches_module
+
+    stage = tmp_path / "stage"
+    destination = tmp_path / "destination"
+    stage.mkdir()
+    destination.mkdir()
+    (stage / "new.txt").write_text("staged", encoding="utf-8")
+
+    with pytest.raises((OSError, ProjectContractError)):
+        patches_module._rename_directory_no_replace(stage, destination)
+
+    assert stage.is_dir()
+    assert destination.is_dir()
+    assert list(destination.iterdir()) == []
+    assert (stage / "new.txt").read_text(encoding="utf-8") == "staged"
+
+
+def test_patch_install_does_not_overwrite_destination_created_during_staging(tmp_path, monkeypatch):
+    import metaforge.projects.patches as patches_module
+
+    root = tmp_path / "project"
+    root.mkdir()
+    make_project(root)
+    snapshot = capture_project_snapshot(root)
+    patch = ProjectPatch.from_dict(patch_dict({
+        "path": "src/pkg/new.py",
+        "action": "create",
+        "content": "value = 7\n",
+    }))
+    destination = tmp_path / "raced-destination"
+    original_install = patches_module._rename_directory_no_replace
+
+    def create_destination_before_install(source, target):
+        target.mkdir()
+        return original_install(source, target)
+
+    monkeypatch.setattr(patches_module, "_rename_directory_no_replace", create_destination_before_install)
+
+    with pytest.raises((OSError, ProjectContractError)):
+        apply_patch_to_copy(snapshot, patch, destination)
+
+    assert destination.is_dir()
+    assert list(destination.iterdir()) == []
+    assert not list(tmp_path.glob(".raced-destination.metaforge-*"))
+
+
+def test_failed_final_validation_preserves_replacement_destination(tmp_path, monkeypatch):
+    import shutil
+    import metaforge.projects.patches as patches_module
+
+    root = tmp_path / "project"
+    root.mkdir()
+    make_project(root)
+    snapshot = capture_project_snapshot(root)
+    patch = ProjectPatch.from_dict(patch_dict({
+        "path": "src/pkg/new.py",
+        "action": "create",
+        "content": "value = 9\n",
+    }))
+    destination = tmp_path / "published-copy"
+    original_capture = patches_module.capture_project_snapshot
+    calls = 0
+
+    def replace_destination_before_final_check(path, policy=None):
+        nonlocal calls
+        calls += 1
+        if calls == 3:
+            shutil.rmtree(path)
+            replacement = Path(path)
+            replacement.mkdir()
+            (replacement / "user-data.txt").write_text("preserve me", encoding="utf-8")
+            raise ProjectContractError("injected final validation failure")
+        return original_capture(path, policy)
+
+    monkeypatch.setattr(patches_module, "capture_project_snapshot", replace_destination_before_final_check)
+
+    with pytest.raises(ProjectContractError, match="injected final validation failure"):
+        apply_patch_to_copy(snapshot, patch, destination)
+
+    assert (destination / "user-data.txt").read_text(encoding="utf-8") == "preserve me"
