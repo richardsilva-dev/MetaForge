@@ -127,3 +127,21 @@ To create a separate candidate copy after the default contract review accepts a 
 The destination parent directory must already exist, and the destination itself must not. A rejected patch creates no candidate copy.
 The original project is never modified by this command. The candidate is not executed
 or tested; it is a reviewable artifact for subsequent validation.
+
+
+## Static validation planning
+
+The validation planner inventories likely test targets using language-specific path
+conventions and declared test-framework dependencies. It also runs the existing
+redacted secret scanner and summarizes architecture risks. The planner does not
+execute tests, builds, project modules, package managers, or network operations.
+Framework identification is heuristic: a discovered test file does not prove that
+its runner or all test dependencies are installed.
+
+Command:
+
+    python -m metaforge.cli project validation-plan <project-root>
+
+The report separates completed static checks from test execution, runtime security,
+and performance validation, which remain explicitly not executed until a compatible
+isolated toolchain profile is selected.
