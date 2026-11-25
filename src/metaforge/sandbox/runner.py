@@ -49,7 +49,7 @@ _trusted_stdout_write(_trusted_json_dumps(
 """
 
 _RUNNER_SOURCE = r"""
-import json, os, resource, socket, subprocess, sys, time
+import ctypes, json, os, resource, socket, subprocess, sys, time
 
 _trusted_system_exit = SystemExit
 
@@ -138,6 +138,9 @@ _trusted_monotonic = time.monotonic
 _trusted_popen = subprocess.Popen
 _trusted_killpg = os.killpg
 _trusted_process_lookup_error = ProcessLookupError
+_libc = ctypes.CDLL(None, use_errno=True)
+if _libc.prctl(4, 0, 0, 0, 0) != 0:  # PR_SET_DUMPABLE=0 prevents child /proc fd inspection.
+    fail(42)
 
 with open(sys.argv[2], encoding="utf-8") as handle:
     payload = json.load(handle)
@@ -167,7 +170,7 @@ for _ in _trusted_range(repeat_count):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=child_env,
-            cwd="/workspace",
+            cwd=os.path.dirname(os.path.abspath(sys.argv[3])),
             start_new_session=True,
         )
         try:
