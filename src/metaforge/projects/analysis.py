@@ -94,6 +94,9 @@ def _parse_python(path: str, raw: bytes, known: set[str]):
     except SyntaxError as exc:
         return imports, symbols, "syntax_error", [{"path": path, "code": "python-syntax-error",
             "severity": "warning", "line": exc.lineno or 1}]
+    except RecursionError:
+        return imports, symbols, "resource_limit", [{"path": path, "code": "python-ast-recursion-limit",
+            "severity": "error"}]
     current = _module_name(path)
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -104,7 +107,7 @@ def _parse_python(path: str, raw: bytes, known: set[str]):
                     "local" if local else "external_or_unresolved"))
         elif isinstance(node, ast.ImportFrom):
             target = _relative_target(current, node.level, node.module, PurePosixPath(path).stem == "__init__") if node.level else (node.module or "")
-            local = target in known or any(x.startswith(target + ".") for x in known) or (node.level > 0 and bool(target))
+            local = bool(target) and (target in known or any(x.startswith(target + ".") for x in known))
             imports.append(ProjectImport(path, target or ".", node.lineno, "from",
                 "local" if local else "external_or_unresolved"))
     for node in tree.body:
