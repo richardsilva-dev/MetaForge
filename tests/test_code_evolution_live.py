@@ -9,6 +9,7 @@ from agents.testing import ScriptedModel, assistant_message
 
 from metaforge.agents.code_designer import OpenAICodeDesigner
 from metaforge.evolution.code_engine import CodeEvolutionEngine
+from metaforge.evolution.workloads import INTEGER_SORT_WORKLOAD_NAMES
 from metaforge.sandbox.policy import SandboxPolicy
 from metaforge.sandbox.runner import SandboxRunner
 
@@ -37,13 +38,15 @@ def test_scripted_code_agent_executes_only_inside_live_rootless_sandbox():
         generations=1,
         repeats=2,
         max_agent_calls=1,
-        global_timeout_seconds=60,
+        global_timeout_seconds=120,
     )
     result = engine.run([9, 1, 5, 3, 3, -2, 8])
     best = result["best_candidate"]
     assert best is not None
     assert best["correctness_passed"] is True
-    assert len(best["algorithm_samples_seconds"]) == 2
+    assert len(best["algorithm_samples_seconds"]) == 2 * len(INTEGER_SORT_WORKLOAD_NAMES)
+    assert tuple(best["workload_results"]) == INTEGER_SORT_WORKLOAD_NAMES
+    assert all(item["correctness_passed"] for item in best["workload_results"].values())
     assert best["candidate"]["source_code"] == source
     assert result["sandbox"]["rootless"] is True
     assert result["sandbox"]["smoke_passed"] is True

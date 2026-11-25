@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Benchmark robustness
+
+- Added a versioned deterministic integer-sort workload suite covering original, ascending, descending, nearly-sorted, duplicate-heavy, low-cardinality, organ-pipe, and all-equal distributions.
+- Require every candidate to pass the independent correctness oracle and benchmark gate on every workload before it can enter selection.
+- Rank candidates by the median of per-workload medians with equal workload weighting; retain per-workload raw samples and container-wall measurements separately.
+- Include suite version and per-workload SHA-256 fingerprints in experiment artifacts.
+- Extend replay to reconstruct and verify the exact workload schedule without model calls; preserve replay compatibility with V0.7 single-input archives.
+- Update live rootless sandbox integration tests to execute the full suite.
+
 ### Security hardening
 
 - Reject wildcard imports in source-level candidate proposals so imported names cannot bypass static policy checks.

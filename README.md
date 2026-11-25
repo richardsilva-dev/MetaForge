@@ -86,7 +86,7 @@ With the optional Agents SDK installed and API key/model set in the shell:
 
     python -m metaforge.cli code-evolve --size 5000 --population-size 2 --generations 2 --repeats 3 --max-agent-calls 4
 
-The source proposal contract currently requires a pure `solve(values)` function returning an ascending list of signed 64-bit integers. Proposed code is reviewed, executed in a rootless container with no network, and checked against the independent host-side sorting oracle. Model output is never trusted as proof of safety or correctness.
+The source proposal contract currently requires a pure `solve(values)` function returning an ascending list of signed 64-bit integers. Each candidate is evaluated on eight deterministic workload profiles derived from the same integrity-checked dataset: original, ascending, descending, nearly sorted, duplicate-heavy, low-cardinality, organ-pipe, and all-equal. Each profile receives the same repeat count; the selection score is the median of per-workload medians, so a candidate cannot win by exploiting only one input ordering. Proposed code is reviewed, executed in a rootless container with no network, and checked against the independent host-side sorting oracle on every workload. Model output is never trusted as proof of safety or correctness.
 
 The CLI writes:
 - `.artifacts/code-evolution.json` and `.artifacts/code-evolution.md` as convenient latest-run pointers.
@@ -98,7 +98,7 @@ The CLI's synthetic dataset is embedded in its run artifact so the experiment ca
 
     python -m metaforge.cli code-replay --run .artifacts/runs/<run_id>.json
 
-Replay verifies the embedded dataset hash and candidate source fingerprints, repeats static review, rechecks the rootless sandbox, and measures archived candidate source without model calls. Hardware, runtime, image, and load may differ; timing values are not expected to match exactly.
+Replay verifies the embedded dataset hash, benchmark-suite version and workload fingerprints, and candidate source fingerprints; it repeats static review, rechecks the rootless sandbox, and measures archived candidate source without model calls. Older single-input archives remain replayable. Hardware, runtime, image, and load may differ; timing values are not expected to match exactly.
 
 ## Compiled-language backends
 
@@ -127,6 +127,8 @@ CI covers Python 3.11, 3.12, and 3.13; optional LangGraph/OpenAI Agents SDK adap
 Benchmark values are exploratory. Do not claim general performance improvements without controlled repeated comparisons across representative workloads, multiple runs, and equivalent environments.
 
 ## Roadmap
+
+The planned language-neutral and project-refactoring architecture is specified in [the multi-language refactoring design](docs/architecture/multilanguage-project-refactoring.md). This is a design target, not a claim that repository-wide refactoring is already available.
 
 - **V0.1–V0.6:** controlled optimizer, agent contracts, provenance/replay, compiled trusted backends, and rootless sandbox.
 - **V0.7:** source-level Python code generation, static review, sandboxed correctness/performance evaluation, lineage, and replay.
