@@ -89,7 +89,8 @@ class ProjectAnalysis:
             "dependency_graph": self.dependency_graph,
             "dependency_manifests": [item.to_dict() for item in self.dependency_manifests],
             "analysis_scope": {"static_only": True, "executed_project_code": False,
-                "python_ast": True, "other_languages": "file inventory only; dedicated parsers are future work"},
+                "python_ast": True, "other_languages": "file inventory only; dedicated parsers are future work",
+                "manifest_inventory": "explicit root allow-list; declarations only; no resolution, installation, or execution"},
         }
 
 def _module_name(path: str) -> str | None:
@@ -365,7 +366,7 @@ def _manifest_dependencies(path: str, raw: bytes) -> tuple[list[ManifestDependen
                 version = dep.findtext("{*}version") or "unspecified"
                 scope = dep.findtext("{*}scope") or "compile"
                 if group_id and artifact_id: add(group_id + ":" + artifact_id, version, scope)
-    except (UnicodeDecodeError, ValueError, TypeError, KeyError, ET.ParseError):
+    except (UnicodeDecodeError, ValueError, TypeError, KeyError, AttributeError, ET.ParseError):
         diagnostics.append({"path": path, "code": "dependency-manifest-parse-error", "severity": "warning"})
     found.sort(key=lambda item: (item.group.casefold(), item.name.casefold(), item.requirement))
     return found, diagnostics
