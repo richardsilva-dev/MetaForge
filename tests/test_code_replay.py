@@ -136,3 +136,23 @@ def test_code_replay_rejects_tampered_candidate_source_before_sandbox():
     with pytest.raises(ValueError, match="source fingerprint"):
         CodeReplayEngine(sandbox).run(original)
     assert sandbox.calls == []
+
+
+def test_replay_identifies_trusted_baseline_by_fingerprint_not_archive_metadata():
+    original = _artifact()
+    untrusted_source = "def solve(values):\\n    return list(sorted(values))\\n"
+    original["generations"][0]["evaluations"][0]["candidate"].update({
+        "source_code": untrusted_source,
+        "fingerprint": hashlib.sha256(untrusted_source.encode("utf-8")).hexdigest(),
+        "generation": -1,
+    })
+    original["budget"]["repeats"] = 5
+    sandbox = FakeSandboxRunner()
+
+    result = CodeReplayEngine(sandbox).run(original)
+    trusted_source = "def solve(values):\\n    return sorted(values)\\n"
+    trusted_fingerprint = hashlib.sha256(trusted_source.encode("utf-8")).hexdigest()
+
+    assert result["baseline"]["candidate"]["fingerprint"] == trusted_fingerprint
+    assert result["baseline"]["candidate"]["source_code"] == trusted_source
+    assert result["selection"]["selected_source"] == "trusted_baseline"
