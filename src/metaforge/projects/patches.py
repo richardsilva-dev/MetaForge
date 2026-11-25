@@ -14,7 +14,7 @@ from metaforge.projects.models import (
     ProjectSnapshot,
     _validate_project_path,
 )
-from metaforge.projects.snapshot import _read_regular_file, capture_project_snapshot
+from metaforge.projects.snapshot import (\n    _read_regular_file,\n    _read_relative_regular_file,\n    capture_project_snapshot,\n)
 
 
 def validate_patch_against_snapshot(
@@ -182,7 +182,7 @@ def apply_patch_to_copy(
         for entry in snapshot.files:
             source = source_root / PurePosixPath(entry.path)
             target = stage / PurePosixPath(entry.path)
-            raw = _read_regular_file(source, policy.max_file_bytes)
+            raw = _read_relative_regular_file(source_root, entry.path, policy.max_file_bytes)
             if hashlib.sha256(raw).hexdigest() != entry.sha256:
                 raise ProjectContractError(f"Source file changed while copying: {entry.path}")
             _write_file_exclusive(target, raw)
