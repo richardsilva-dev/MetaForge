@@ -374,7 +374,7 @@ def _manifest_dependencies(path: str, raw: bytes) -> tuple[list[ManifestDependen
                 version = dep.findtext("{*}version") or "unspecified"
                 scope = dep.findtext("{*}scope") or "compile"
                 if group_id and artifact_id: add(group_id + ":" + artifact_id, version, scope)
-    except (UnicodeDecodeError, ValueError, TypeError, KeyError, AttributeError, ET.ParseError):
+    except (UnicodeDecodeError, ValueError, TypeError, KeyError, AttributeError, RecursionError, ET.ParseError):
         diagnostics.append({"path": path, "code": "dependency-manifest-parse-error", "severity": "warning"})
     found.sort(key=lambda item: (item.group.casefold(), item.name.casefold(), item.requirement))
     return found, diagnostics
