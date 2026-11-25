@@ -81,6 +81,20 @@ class ExternalDependencyUsage:
                 "confidence": self.confidence}
 
 @dataclass(frozen=True, slots=True)
+class ProjectModuleContract:
+    path: str
+    module_name: str | None
+    declared_all: bool
+    exported_names: tuple[str, ...]
+    public_symbols: tuple[ProjectSymbol, ...]
+    confidence: str
+    def to_dict(self) -> dict[str, Any]:
+        return {"path": self.path, "module_name": self.module_name,
+                "declared_all": self.declared_all, "exported_names": list(self.exported_names),
+                "public_symbols": [item.to_dict() for item in self.public_symbols],
+                "confidence": self.confidence}
+
+@dataclass(frozen=True, slots=True)
 class ProjectAnalysis:
     snapshot_fingerprint: str
     files_analyzed: int
@@ -92,9 +106,10 @@ class ProjectAnalysis:
     dependency_graph: dict[str, Any]
     dependency_manifests: tuple[ManifestDependency, ...]
     external_dependency_usage: tuple[ExternalDependencyUsage, ...]
+    module_contracts: tuple[ProjectModuleContract, ...]
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": "1.1", "snapshot_fingerprint": self.snapshot_fingerprint,
+            "schema_version": "1.2", "snapshot_fingerprint": self.snapshot_fingerprint,
             "files_analyzed": self.files_analyzed, "language_counts": dict(self.language_counts),
             "modules": [x.to_dict() for x in self.modules],
             "imports": [x.to_dict() for x in self.imports],
@@ -103,6 +118,7 @@ class ProjectAnalysis:
             "dependency_graph": self.dependency_graph,
             "dependency_manifests": [item.to_dict() for item in self.dependency_manifests],
             "external_dependency_usage": [item.to_dict() for item in self.external_dependency_usage],
+            "module_contracts": [item.to_dict() for item in self.module_contracts],
             "analysis_scope": {"static_only": True, "executed_project_code": False,
                 "python_ast": True, "other_languages": "file inventory only; dedicated parsers are future work",
                 "manifest_inventory": "explicit root allow-list; declarations only; no resolution, installation, or execution",
@@ -168,12 +184,79 @@ def _parse_python(path: str, raw: bytes, known: set[str]):
         if isinstance(node, ast.ClassDef) and not node.name.startswith("_"):
             bases = "(" + ", ".join(ast.unparse(x) for x in node.bases) + ")" if node.bases else ""
             symbols.append(ProjectSymbol(path, node.name, "class", node.lineno, f"class {node.name}{bases}"))
+            for member in node.body:
+                if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)) and not member.name.startswith("_"):
+                    prefix = "async " if isinstance(member, ast.AsyncFunctionDef) else ""
+                    signature = f"{prefix}def {node.name}.{member.name}({ast.unparse(member.args)})"
+                    if member.returns: signature += f" -> {ast.unparse(member.returns)}"
+                    symbols.append(ProjectSymbol(path, f"{node.name}.{member.name}", "method", member.lineno, signature))
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not node.name.startswith("_"):
             prefix = "async " if isinstance(node, ast.AsyncFunctionDef) else ""
             sig = f"{prefix}def {node.name}({ast.unparse(node.args)})"
             if node.returns: sig += f" -> {ast.unparse(node.returns)}"
             symbols.append(ProjectSymbol(path, node.name, "function", node.lineno, sig))
     return imports, symbols, "parsed", diagnostics
+
+
+
+def _literal_string_sequence(node: ast.AST | None) -> tuple[str, ...] | None:
+    if not isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return None
+    values = []
+    for item in node.elts:
+        if not isinstance(item, ast.Constant) or not isinstance(item.value, str):
+            return None
+        values.append(item.value)
+    return tuple(values)
+
+
+def _module_contract(path: str, raw: bytes,
+                     symbols: list[ProjectSymbol]) -> tuple[ProjectModuleContract, list[dict[str, Any]]]:
+    tree = ast.parse(raw.decode("utf-8"), filename=path, type_comments=True)
+    declared = False
+    dynamic = False
+    exported: tuple[str, ...] | None = None
+    diagnostics: list[dict[str, Any]] = []
+    for node in tree.body:
+        value = None
+        is_all = False
+        if isinstance(node, ast.Assign):
+            is_all = any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets)
+            value = node.value
+        elif isinstance(node, ast.AnnAssign):
+            is_all = isinstance(node.target, ast.Name) and node.target.id == "__all__"
+            value = node.value
+        elif isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name) and node.target.id == "__all__":
+            is_all = True
+            value = node.value
+        if not is_all:
+            continue
+        declared = True
+        literal = _literal_string_sequence(value)
+        if literal is None:
+            dynamic = True
+            exported = None
+        elif isinstance(node, ast.AugAssign) and isinstance(node.op, ast.Add) and exported is not None:
+            exported = exported + literal
+        else:
+            exported = literal
+    public_symbols = tuple(sorted(
+        (item for item in symbols if item.path == path and item.kind in {"class", "function"}),
+        key=lambda item: (item.line, item.name),
+    ))
+    if declared and exported is not None and not dynamic:
+        names = tuple(dict.fromkeys(exported))
+        confidence = "declared_static_all"
+    elif declared:
+        names = tuple(item.name for item in public_symbols)
+        confidence = "dynamic_all_fallback"
+        diagnostics.append({"path": path, "code": "python-dynamic-all-unsupported",
+                            "severity": "warning"})
+    else:
+        names = tuple(item.name for item in public_symbols)
+        confidence = "inferred_public_definitions"
+    return ProjectModuleContract(path, _module_name(path), declared, names,
+                                 public_symbols, confidence), diagnostics
 
 
 def _has_main_guard(tree: ast.AST) -> bool:
@@ -436,7 +519,7 @@ def analyze_project(snapshot: ProjectSnapshot) -> ProjectAnalysis:
     """Build a deterministic static inventory; never import or execute project source."""
     if not isinstance(snapshot, ProjectSnapshot): raise ProjectContractError("A ProjectSnapshot is required")
     files = []
-    modules, imports, symbols, diagnostics, counts, entry_points, manifest_dependencies = [], [], [], [], {}, [], []
+    modules, imports, symbols, diagnostics, counts, entry_points, manifest_dependencies, module_contracts = [], [], [], [], {}, [], [], []
     for entry in snapshot.files:
         language = _LANGUAGES.get(PurePosixPath(entry.path).suffix.casefold())
         is_manifest = PurePosixPath(entry.path).name.casefold() in _MANIFEST_NAMES and "/" not in entry.path
@@ -458,6 +541,10 @@ def analyze_project(snapshot: ProjectSnapshot) -> ProjectAnalysis:
             imps, syms, status, diags = _parse_python(path, raw, known)
             imports.extend(imps); symbols.extend(syms); diagnostics.extend(diags)
             if status == "parsed":
+                contract, contract_diags = _module_contract(path, raw, syms)
+                module_contracts.append(contract)
+                diagnostics.extend(contract_diags)
+            if status == "parsed":
                 try:
                     tree = ast.parse(raw.decode("utf-8"), filename=path, type_comments=True)
                     if PurePosixPath(path).name == "__main__.py":
@@ -474,6 +561,7 @@ def analyze_project(snapshot: ProjectSnapshot) -> ProjectAnalysis:
     graph = _dependency_graph(modules, imports, entry_points)
     ordered_manifests = tuple(sorted(manifest_dependencies, key=lambda item: (item.ecosystem, item.manifest_path, item.group, item.name.casefold(), item.requirement)))
     external_usage = _external_dependency_usage(imports, manifest_dependencies)
+    module_contracts.sort(key=lambda item: item.path.casefold())
     return ProjectAnalysis(snapshot.fingerprint, len(modules), tuple(sorted(counts.items())),
         tuple(modules), tuple(imports), tuple(symbols), tuple(diagnostics), graph,
-        ordered_manifests, external_usage)
+        ordered_manifests, external_usage, tuple(module_contracts))
