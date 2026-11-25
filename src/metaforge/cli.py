@@ -156,10 +156,20 @@ def main() -> int:
             import stat
             from metaforge.projects import ProjectPatch, capture_project_snapshot, review_project_patch
             patch_path = args.patch.expanduser()
-            patch_stat = patch_path.lstat()
-            if not stat.S_ISREG(patch_stat.st_mode) or patch_stat.st_size > 2 * 1024 * 1024:
-                raise ValueError("Patch input must be a regular file no larger than 2 MiB")
-            patch_data = json.loads(patch_path.read_text(encoding="utf-8"))
+            descriptor = os.open(patch_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            try:
+                patch_stat = os.fstat(descriptor)
+                if not stat.S_ISREG(patch_stat.st_mode) or patch_stat.st_size > 2 * 1024 * 1024:
+                    raise ValueError("Patch input must be a regular file no larger than 2 MiB")
+                with os.fdopen(descriptor, "rb") as stream:
+                    descriptor = -1
+                    patch_bytes = stream.read(2 * 1024 * 1024 + 1)
+            finally:
+                if descriptor >= 0:
+                    os.close(descriptor)
+            if len(patch_bytes) > 2 * 1024 * 1024:
+                raise ValueError("Patch input grew beyond the 2 MiB limit")
+            patch_data = json.loads(patch_bytes.decode("utf-8"))
             patch = ProjectPatch.from_dict(patch_data)
             snapshot = capture_project_snapshot(args.root)
             report = review_project_patch(
