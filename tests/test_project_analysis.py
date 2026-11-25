@@ -203,7 +203,7 @@ def test_external_imports_are_compared_to_declared_python_dependencies(tmp_path)
     assert usage["PIL"]["status"] == "no_exact_name_match"
     assert usage["PIL"]["confidence"] == "unresolved_mapping"
     assert ("json", "stdlib") in imports
-    assert report["schema_version"] == "1.2"
+    assert report["schema_version"] == "1.3"
 
 
 def test_static_module_contract_uses_literal_all_and_public_signatures(tmp_path):
@@ -236,7 +236,7 @@ def test_static_module_contract_uses_literal_all_and_public_signatures(tmp_path)
     assert {"PublicAPI", "PublicAPI.__init__", "PublicAPI.execute", "run"} <= symbol_names
     assert "PublicAPI._internal" not in symbol_names
     assert "_private" not in symbol_names
-    assert report["schema_version"] == "1.2"
+    assert report["schema_version"] == "1.3"
 
 
 def test_dynamic_all_uses_conservative_fallback_and_diagnostic(tmp_path):
@@ -254,3 +254,52 @@ def test_dynamic_all_uses_conservative_fallback_and_diagnostic(tmp_path):
     assert contract["confidence"] == "dynamic_all_fallback"
     assert contract["exported_names"] == ["visible"]
     assert any(item["code"] == "python-dynamic-all-unsupported" for item in report["diagnostics"])
+
+
+def test_manifest_declared_python_entrypoints_resolve_modules_and_symbols(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    _project(root)
+    (root / "src" / "sample" / "cli.py").write_text(
+        "def main():\n    return 0\n",
+        encoding="utf-8",
+    )
+    (root / "pyproject.toml").write_text(
+        '[project]\nname = "sample"\n'
+        '[project.scripts]\nsample-cli = "sample.cli:main"\n'
+        'missing-cli = "sample.missing:main"\n'
+        'missing-symbol = "sample.cli:missing"\n'
+        'package-cli = "sample:calculate"\n',
+        encoding="utf-8",
+    )
+
+    report = analyze_project(capture_project_snapshot(root)).to_dict()
+    entries = {item["name"]: item for item in report["declared_entry_points"]}
+
+    assert entries["sample-cli"]["resolution"] == "resolved"
+    assert entries["sample-cli"]["resolved_path"] == "src/sample/cli.py"
+    assert entries["missing-cli"]["resolution"] == "module_not_found"
+    assert entries["missing-symbol"]["resolution"] == "symbol_not_found"
+    assert entries["package-cli"]["resolution"] == "resolved"
+    assert entries["package-cli"]["resolved_path"] == "src/sample/__init__.py"
+    assert any(item["kind"] == "declared_console_script" and item["path"] == "src/sample/cli.py"
+               for item in report["dependency_graph"]["entry_points"])
+    assert report["schema_version"] == "1.3"
+
+
+def test_non_python_declared_binary_entrypoints_are_reported_without_execution(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    _project(root)
+    (root / "Cargo.toml").write_text(
+        '[[bin]]\nname = "sample-tool"\npath = "src/main.rs"\n',
+        encoding="utf-8",
+    )
+
+    report = analyze_project(capture_project_snapshot(root)).to_dict()
+    entry = next(item for item in report["declared_entry_points"] if item["name"] == "sample-tool")
+
+    assert entry["ecosystem"] == "rust"
+    assert entry["kind"] == "cargo_bin"
+    assert entry["resolution"] == "not_analyzed"
+    assert report["analysis_scope"]["executed_project_code"] is False
