@@ -68,3 +68,14 @@ a matching declaration, not proof of installation or runtime availability. A mis
 match is not proof of an undeclared dependency because distribution names and import
 names can differ, namespace packages can span distributions, and dynamic imports are
 not fully visible to static AST analysis. No package resolution or installation occurs.
+
+
+### Python public API contracts
+
+For Python modules, the analyzer records a conservative module contract: literal
+string-only __all__ declarations when statically available, inferred public top-level
+class/function definitions otherwise, and signatures for public methods of exported
+classes. Dynamic __all__ expressions produce a warning and fall back to visible public
+definitions. This is a static source contract, not a guarantee of runtime exports:
+module-level mutation, decorators, metaprogramming, conditional definitions, and
+dynamic imports can alter the effective API.
