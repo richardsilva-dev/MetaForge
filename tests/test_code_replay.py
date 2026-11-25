@@ -88,7 +88,7 @@ def test_legacy_code_replay_remains_backward_compatible():
     assert result["best_candidate"] is not None
     assert result["best_candidate"]["correctness_passed"] is True
     assert len(result["best_candidate"]["algorithm_samples_seconds"]) == 2
-    assert len(sandbox.calls) == 3  # smoke, trusted baseline, archived candidate
+    assert len(sandbox.calls) == 2  # smoke plus one deduplicated baseline/candidate source
     assert sandbox.calls[0][3] is True
     assert all(call[3] is False for call in sandbox.calls[1:])
     assert result["benchmark"]["suite"] == "legacy-single-input"
@@ -103,7 +103,7 @@ def test_code_replay_remeasures_every_archived_workload_without_model_calls():
     assert result["best_candidate"]["correctness_passed"] is True
     assert len(result["best_candidate"]["algorithm_samples_seconds"]) == 2 * len(INTEGER_SORT_WORKLOAD_NAMES)
     assert tuple(result["best_candidate"]["workload_results"]) == INTEGER_SORT_WORKLOAD_NAMES
-    assert len(sandbox.calls) == 1 + 2 * len(INTEGER_SORT_WORKLOAD_NAMES)
+    assert len(sandbox.calls) == 1 + len(INTEGER_SORT_WORKLOAD_NAMES)  # identical candidate and baseline fingerprint
     assert sandbox.calls[0][3] is True
     assert all(call[3] is False for call in sandbox.calls[1:])
 
