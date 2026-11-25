@@ -18,8 +18,10 @@ from metaforge.sandbox.policy import SandboxPolicy
 _RUNNER_SOURCE = r"""
 import json, os, resource, runpy, socket, sys, time
 
+_trusted_system_exit = SystemExit
+
 def fail(code):
-    raise SystemExit(code)
+    raise _trusted_system_exit(code)
 
 def verify_sandbox():
     if os.geteuid() == 0:
@@ -88,27 +90,48 @@ def verify_sandbox():
 if sys.argv[4] == "1":
     verify_sandbox()
 
+# Capture trusted primitives before loading untrusted candidate code. A candidate
+# can mutate shared Python modules and builtins during module initialization.
+_trusted_clock = time.perf_counter_ns
+_trusted_json_dumps = json.dumps
+_trusted_stdout_write = sys.stdout.write
+_trusted_sorted = sorted
+_trusted_isinstance = isinstance
+_trusted_type = type
+_trusted_any = any
+_trusted_max = max
+_trusted_callable = callable
+_trusted_list_type = list
+_trusted_int_type = int
+_trusted_range = range
+_trusted_int = int
+
 with open(sys.argv[2], encoding="utf-8") as handle:
     payload = json.load(handle)
 values = payload["values"]
+repeat_count = _trusted_int(sys.argv[3])
+expected = _trusted_sorted(values)
 namespace = runpy.run_path(sys.argv[1], run_name="metaforge_candidate")
 solve = namespace.get("solve")
-if not callable(solve):
+if not _trusted_callable(solve):
     fail(30)
-expected = sorted(values)
 samples_ns = []
 result = None
-for _ in range(int(sys.argv[3])):
+for _ in _trusted_range(repeat_count):
     sample = values.copy()
-    started = time.perf_counter_ns()
+    started = _trusted_clock()
     result = solve(sample)
-    elapsed = time.perf_counter_ns() - started
-    if not isinstance(result, list) or any(type(value) is not int for value in result):
+    elapsed = _trusted_clock() - started
+    if _trusted_type(result) is not _trusted_list_type or _trusted_any(
+        _trusted_type(value) is not _trusted_int_type for value in result
+    ):
         fail(31)
     if result != expected:
         fail(32)
-    samples_ns.append(max(0, elapsed))
-print(json.dumps({"output": result, "samples_ns": samples_ns}, separators=(",", ":")))
+    samples_ns.append(_trusted_max(0, elapsed))
+_trusted_stdout_write(_trusted_json_dumps(
+    {"output": result, "samples_ns": samples_ns}, separators=(",", ":")
+) + "\n")
 """
 
 
