@@ -14,6 +14,7 @@ from metaforge.agents.code_safety import CodeReviewResult, StaticCodeReviewer
 from metaforge.agents.contracts import AgentResult, AgentTask
 from metaforge.sandbox.runner import SandboxPreparation, SandboxResult, SandboxRunner
 from metaforge.evolution.metadata import runtime_metadata
+from metaforge.evolution.benchmark_selection import passes_baseline_gate
 from metaforge.evolution.workloads import (
     INTEGER_SORT_SUITE_NAME,
     INTEGER_SORT_SUITE_VERSION,
@@ -388,7 +389,14 @@ class CodeEvolutionEngine:
                 if evaluation.success and evaluation.median_algorithm_seconds is not None:
                     baseline_score = baseline_evaluation.median_algorithm_seconds
                     required_score = baseline_score * (1.0 - self.MIN_IMPROVEMENT_RATIO)
-                    if evaluation.median_algorithm_seconds <= required_score:
+                    if (
+                        evaluation.median_algorithm_seconds <= required_score
+                        and passes_baseline_gate(
+                            evaluation.workload_results,
+                            baseline_evaluation.workload_results,
+                            self.MIN_IMPROVEMENT_RATIO,
+                        )
+                    ):
                         all_valid.append(evaluation)
                 if time.monotonic() >= deadline:
                     stop_reason = "global_timeout"
@@ -409,6 +417,11 @@ class CodeEvolutionEngine:
                 item for item in evaluations
                 if item.success and item.median_algorithm_seconds is not None
                 and item.median_algorithm_seconds <= baseline_evaluation.median_algorithm_seconds * (1.0 - self.MIN_IMPROVEMENT_RATIO)
+                and passes_baseline_gate(
+                    item.workload_results,
+                    baseline_evaluation.workload_results,
+                    self.MIN_IMPROVEMENT_RATIO,
+                )
             ]
             parent_pool = current_parents[:2] or sorted(
                 all_valid, key=lambda item: item.median_algorithm_seconds if item.median_algorithm_seconds is not None else float("inf")
