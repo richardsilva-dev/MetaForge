@@ -402,7 +402,7 @@ def test_validate_patch_rechecks_live_file_hash_against_snapshot(tmp_path):
     patch = ProjectPatch.from_dict(patch_dict({
         "path": "src/pkg/module.py",
         "action": "replace",
-        "expected_sha256": digest(original),
+        "expected_sha256": snapshot.file_map["src/pkg/module.py"].sha256,
         "content": "def value(): return 42\n",
     }))
     (root / "src" / "pkg" / "module.py").write_text("tampered = True\n", encoding="utf-8")
